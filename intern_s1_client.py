@@ -18,7 +18,7 @@ class InternS1Client:
     def __init__(
         self,
         api_key: Optional[str] = None,
-        model: str = "intern-s1",
+        model: str = "intern-s2-preview-397b",
         base_url: str = "https://chat.intern-ai.org.cn/api/v1/",
         temperature: float = 0.1,
         max_tokens: int = 8192,

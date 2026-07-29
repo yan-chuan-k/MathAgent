@@ -25,7 +25,7 @@ class MathAgentOrchestrator:
         self.enable_repair = enable_repair
         self.enable_tool_verify = enable_tool_verify
         self.backend = self._resolve_backend(backend)
-        self.model = getattr(client, "model", "intern-s1")
+        self.model = getattr(client, "model", "intern-s2-preview-397b")
         self.schema = self._load_schema(schema_path)
         self.last_log: Dict[str, Any] = {}
 

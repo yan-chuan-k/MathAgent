@@ -66,7 +66,7 @@ def save_json(path, data):
 def build_client(use_mock):
     if use_mock:
         return MockClient()
-    model = os.getenv("INTERN_MODEL", "intern-s1")
+    model = os.getenv("INTERN_MODEL", "intern-s2-preview-397b")
     base_url = os.getenv("INTERN_API_BASE", "https://chat.intern-ai.org.cn/api/v1/")
     return InternS1Client(model=model, base_url=base_url)
 

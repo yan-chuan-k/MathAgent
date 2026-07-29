@@ -27,7 +27,7 @@ Only local debugging reads environment variables:
 
 ```bash
 export INTERN_API_KEY="your_api_key"
-export INTERN_MODEL="intern-s1"
+export INTERN_MODEL="intern-s2-preview-397b"
 export INTERN_API_BASE="https://chat.intern-ai.org.cn/api/v1/"
 export LOCAL_MAX_CONCURRENCY=4
 ```
@@ -51,7 +51,7 @@ python run_batch.py --input problems.jsonl --output results.jsonl --mock
 
 ## Model
 
-Local default model: `intern-s1`, configurable through `INTERN_MODEL`. The judging platform may inject its own client/model.
+Local default model: `intern-s2-preview-397b`, configurable through `INTERN_MODEL`. The judging platform may inject its own client/model.
 
 ## Submission Info
 
