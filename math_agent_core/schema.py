@@ -1,0 +1,147 @@
+from __future__ import annotations
+
+from copy import deepcopy
+from typing import Any, Dict
+
+
+ALLOWED_VERIFICATION_RESULTS = {"pass", "fail", "uncertain"}
+ALLOWED_TASK_TYPES = {"calculation", "proof", "derivation", "choice", "unknown"}
+ALLOWED_ANSWER_TYPES = {
+    "numeric",
+    "expression",
+    "closed_form",
+    "proof",
+    "set",
+    "interval",
+    "matrix",
+    "unknown",
+}
+
+
+def empty_result(problem_id: str, model: str, backend: str) -> Dict[str, Any]:
+    return {
+        "problem_id": str(problem_id),
+        "problem_type": "unknown",
+        "task_type": "unknown",
+        "domain_candidates": ["unknown"],
+        "reasoning_plan": [],
+        "solution": [],
+        "final_answer": {
+            "answer": "",
+            "answer_type": "unknown",
+        },
+        "verification": {
+            "verification_result": "uncertain",
+            "verification_process": "",
+            "confidence": 0.0,
+        },
+        "learning_hints": [],
+        "_meta": {
+            "model": model,
+            "backend": backend,
+            "attempts": 1,
+            "schema_valid": False,
+            "schema_error": None,
+            "elapsed_seconds": 0.0,
+        },
+    }
+
+
+def normalize_result(
+    result: Dict[str, Any],
+    problem_id: str,
+    model: str,
+    backend: str,
+    attempts: int = 1,
+    elapsed_seconds: float = 0.0,
+) -> Dict[str, Any]:
+    normalized = empty_result(problem_id, model=model, backend=backend)
+    if isinstance(result, dict):
+        normalized.update({k: deepcopy(v) for k, v in result.items() if k != "_meta"})
+
+    normalized["problem_id"] = str(problem_id)
+
+    if "problem_type" not in normalized or not normalized["problem_type"]:
+        normalized["problem_type"] = "unknown"
+    normalized["problem_type"] = str(normalized["problem_type"])
+
+    task_type = str(normalized.get("task_type") or "unknown")
+    normalized["task_type"] = task_type if task_type in ALLOWED_TASK_TYPES else "unknown"
+
+    domains = normalized.get("domain_candidates")
+    if not isinstance(domains, list) or not domains:
+        domains = [normalized["problem_type"] or "unknown"]
+    normalized["domain_candidates"] = [str(item) for item in domains]
+
+    plan = normalized.get("reasoning_plan")
+    if isinstance(plan, str):
+        plan = [plan]
+    if not isinstance(plan, list):
+        plan = []
+    normalized["reasoning_plan"] = [str(item) for item in plan]
+
+    solution = normalized.get("solution")
+    if isinstance(solution, str):
+        solution = [{"step": 1, "content": solution}]
+    if not isinstance(solution, list):
+        solution = []
+    normalized_steps = []
+    for index, step in enumerate(solution, start=1):
+        if isinstance(step, dict):
+            normalized_steps.append(
+                {
+                    "step": int(step.get("step") or index),
+                    "content": str(step.get("content") or ""),
+                }
+            )
+        else:
+            normalized_steps.append({"step": index, "content": str(step)})
+    normalized["solution"] = normalized_steps
+
+    final_answer = normalized.get("final_answer")
+    if not isinstance(final_answer, dict):
+        final_answer = {"answer": str(final_answer or ""), "answer_type": "unknown"}
+    answer_type = str(final_answer.get("answer_type") or "unknown")
+    normalized["final_answer"] = {
+        "answer": str(final_answer.get("answer") or ""),
+        "answer_type": answer_type if answer_type in ALLOWED_ANSWER_TYPES else "unknown",
+    }
+
+    verification = normalized.get("verification")
+    if not isinstance(verification, dict):
+        verification = {}
+    verification_result = str(verification.get("verification_result") or "uncertain")
+    if verification_result not in ALLOWED_VERIFICATION_RESULTS:
+        verification_result = "uncertain"
+    try:
+        confidence = float(verification.get("confidence", 0.0))
+    except (TypeError, ValueError):
+        confidence = 0.0
+    confidence = min(1.0, max(0.0, confidence))
+    normalized["verification"] = {
+        "verification_result": verification_result,
+        "verification_process": str(verification.get("verification_process") or ""),
+        "confidence": confidence,
+    }
+    if "issues" in verification:
+        normalized["verification"]["issues"] = verification["issues"]
+
+    hints = normalized.get("learning_hints")
+    if isinstance(hints, str):
+        hints = [hints]
+    if not isinstance(hints, list):
+        hints = []
+    normalized["learning_hints"] = [str(item) for item in hints]
+
+    old_meta = result.get("_meta", {}) if isinstance(result, dict) else {}
+    if not isinstance(old_meta, dict):
+        old_meta = {}
+    normalized["_meta"] = {
+        "model": str(old_meta.get("model") or model),
+        "backend": str(old_meta.get("backend") or backend),
+        "attempts": int(old_meta.get("attempts") or attempts),
+        "schema_valid": bool(old_meta.get("schema_valid", False)),
+        "schema_error": old_meta.get("schema_error"),
+        "elapsed_seconds": float(old_meta.get("elapsed_seconds") or elapsed_seconds),
+    }
+    return normalized

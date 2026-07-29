@@ -1,0 +1,14 @@
+.env
+.venv/
+.idea/
+__pycache__/
+*.pyc
+outputs/
+logs/
+sample_outputs/
+sample_outputs_*/
+result.json
+results.jsonl
+invalid_results.jsonl
+validation_summary.json
+*.docx

@@ -1,0 +1,125 @@
+{
+  "type": "object",
+  "required": [
+    "problem_id",
+    "problem_type",
+    "task_type",
+    "domain_candidates",
+    "reasoning_plan",
+    "solution",
+    "final_answer",
+    "verification",
+    "learning_hints",
+    "_meta"
+  ],
+  "properties": {
+    "problem_id": {
+      "type": "string"
+    },
+    "problem_type": {
+      "type": "string"
+    },
+    "task_type": {
+      "type": "string",
+      "enum": ["calculation", "proof", "derivation", "choice", "unknown"]
+    },
+    "domain_candidates": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "reasoning_plan": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "solution": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["step", "content"],
+        "properties": {
+          "step": {
+            "type": "integer"
+          },
+          "content": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "final_answer": {
+      "type": "object",
+      "required": ["answer", "answer_type"],
+      "properties": {
+        "answer": {
+          "type": "string"
+        },
+        "answer_type": {
+          "type": "string",
+          "enum": ["numeric", "expression", "closed_form", "proof", "set", "interval", "matrix", "unknown"]
+        }
+      }
+    },
+    "verification": {
+      "type": "object",
+      "required": [
+        "verification_result",
+        "verification_process",
+        "confidence"
+      ],
+      "properties": {
+        "verification_result": {
+          "type": "string",
+          "enum": ["pass", "fail", "uncertain"]
+        },
+        "verification_process": {
+          "type": "string"
+        },
+        "confidence": {
+          "type": "number"
+        }
+      }
+    },
+    "learning_hints": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "_meta": {
+      "type": "object",
+      "required": [
+        "model",
+        "backend",
+        "attempts",
+        "schema_valid",
+        "schema_error",
+        "elapsed_seconds"
+      ],
+      "properties": {
+        "model": {
+          "type": "string"
+        },
+        "backend": {
+          "type": "string",
+          "enum": ["simple", "lagent"]
+        },
+        "attempts": {
+          "type": "integer"
+        },
+        "schema_valid": {
+          "type": "boolean"
+        },
+        "schema_error": {
+          "type": ["string", "null"]
+        },
+        "elapsed_seconds": {
+          "type": "number"
+        }
+      }
+    }
+  }
+}
