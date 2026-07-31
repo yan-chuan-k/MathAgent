@@ -12,3 +12,12 @@ results.jsonl
 invalid_results.jsonl
 validation_summary.json
 *.docx
+AGENTS.md
+generate_project_doc.py
+input.json
+problems.jsonl
+json_validator.py
+result_validator.py
+validate_results.py
+run_batch.py
+test_intern_s1.py

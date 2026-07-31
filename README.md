@@ -1,10 +1,8 @@
-# Math-Verify Agent
+# MathAgent
 
 Challenge: 基于 Intern-S 系列模型的数学智能体设计与推理创新
 
 Official entry file: `user_agent.py`
-
-The official runner should use:
 
 ```python
 from user_agent import ReasoningAgent
@@ -32,33 +30,20 @@ export INTERN_API_BASE="https://chat.intern-ai.org.cn/api/v1/"
 export LOCAL_MAX_CONCURRENCY=4
 ```
 
-`user_agent.py` does not read `.env` or require local API keys when the official client is injected.
+`user_agent.py` uses the injected official client and does not require local API keys.
 
 ## Local Runner
-
-Official baseline-style JSONL:
 
 ```bash
 python main.py --input_file sample_data/dev.jsonl --output_dir sample_outputs --mock
 ```
 
-Legacy single-problem mode:
+For real local Intern-S calls, omit `--mock` after configuring `INTERN_API_KEY`.
 
-```bash
-python main.py --input input.json --output result.json --mock
-python run_batch.py --input problems.jsonl --output results.jsonl --mock
-```
-
-## Model
-
-Local default model: `intern-s2-preview-397b`, configurable through `INTERN_MODEL`. The judging platform may inject its own client/model.
+Thinking mode is enabled by default for clients that support `thinking_mode`; use `--no-thinking-mode` only for debugging incompatible clients.
 
 ## Submission Info
 
-Repository URL: `https://github.com/yan-chuan-k/-.git`
+Repository URL: `https://github.com/yan-chuan-k/MathAgent`
 Branch: `main`
 Commit hash: use the final submitted commit SHA.
-
-## Error Handling
-
-`ReasoningAgent.solve` catches per-problem failures and returns a JSON-serializable dict with a non-empty `final_response`. The official entry path uses the injected client and does not require local API keys.
