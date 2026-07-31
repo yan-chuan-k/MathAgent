@@ -31,6 +31,8 @@ def trace_from_orchestrator_result(result: Dict[str, Any], log: Dict[str, Any] |
         trace.extend(sanitize_trace(result["trace"]))
     if result.get("problem_type"):
         trace.append(make_trace_step("route", result.get("problem_type")))
+    if log and log.get("settings"):
+        trace.append(make_trace_step("settings", log.get("settings")))
     if result.get("reasoning_plan"):
         trace.append(make_trace_step("plan", result.get("reasoning_plan")))
     if result.get("verification"):

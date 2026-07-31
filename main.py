@@ -23,6 +23,7 @@ def build_arg_parser():
     parser.add_argument("--backend", choices=["simple", "lagent"], default="simple")
     parser.add_argument("--mock", action="store_true", help="Use MockClient instead of local Intern-S API.")
     parser.add_argument("--max-retries", type=int, default=1)
+    parser.add_argument("--no-thinking-mode", action="store_true", help="Disable Intern-S thinking_mode for debugging.")
     return parser
 
 
@@ -63,12 +64,12 @@ def save_json(path, data):
         json.dump(data, file, ensure_ascii=False, indent=2)
 
 
-def build_client(use_mock):
+def build_client(use_mock, thinking_mode=True):
     if use_mock:
         return MockClient()
     model = os.getenv("INTERN_MODEL", "intern-s2-preview-397b")
     base_url = os.getenv("INTERN_API_BASE", "https://chat.intern-ai.org.cn/api/v1/")
-    return InternS1Client(model=model, base_url=base_url)
+    return InternS1Client(model=model, base_url=base_url, thinking_mode=thinking_mode)
 
 
 def run_baseline(args) -> None:
@@ -99,7 +100,12 @@ def run_baseline(args) -> None:
         metadata = {key: value for key, value in item.items() if key not in {"problem", "problem_text", "answer"}}
 
         try:
-            agent = ReasoningAgent(client=build_client(args.mock), max_retries=args.max_retries)
+            thinking_mode = not args.no_thinking_mode
+            agent = ReasoningAgent(
+                client=build_client(args.mock, thinking_mode=thinking_mode),
+                max_retries=args.max_retries,
+                thinking_mode=thinking_mode,
+            )
             solved = agent.solve(problem_text, metadata)
             result = {
                 "idx": idx,
@@ -130,12 +136,13 @@ def run_legacy_single(args) -> None:
     output_path = resolve_path(args.output)
     problem = load_json(input_path)
     agent = MathAgentOrchestrator(
-        client=build_client(args.mock),
+        client=build_client(args.mock, thinking_mode=not args.no_thinking_mode),
         max_retries=args.max_retries,
         enable_repair=True,
         enable_tool_verify=True,
         backend=args.backend,
         schema_path=BASE_DIR / "result_schema.json",
+        thinking_mode=not args.no_thinking_mode,
     )
 
     result = agent.solve(problem)

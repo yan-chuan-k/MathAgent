@@ -7,6 +7,7 @@ from typing import Any, Dict, Optional
 
 from .json_utils import extract_json_from_text, repair_json_locally, validate_result
 from .prompts import build_solver_messages
+from .router import classify_problem
 from .schema import empty_result
 
 
@@ -19,11 +20,13 @@ class MathAgentOrchestrator:
         enable_tool_verify: bool = True,
         backend: str = "simple",
         schema_path: Optional[Path] = None,
+        thinking_mode: bool = True,
     ):
         self.client = client
         self.max_retries = max_retries
         self.enable_repair = enable_repair
         self.enable_tool_verify = enable_tool_verify
+        self.thinking_mode = thinking_mode
         self.backend = self._resolve_backend(backend)
         self.model = getattr(client, "model", "intern-s2-preview-397b")
         self.schema = self._load_schema(schema_path)
@@ -34,15 +37,18 @@ class MathAgentOrchestrator:
         problem = self._normalize_problem_input(problem, metadata)
         problem_id = str(problem.get("problem_id") or "UNKNOWN")
         problem_text = self._get_problem_text(problem)
+        route_hint = classify_problem(problem_text, problem)
+        problem["_route_hint"] = route_hint
         log = {
             "problem_id": problem_id,
             "input": problem,
             "parsed": {"problem_text": problem_text},
-            "route": {},
+            "route": route_hint,
             "plan": [],
             "solver_raw_output": "",
             "solver_result": {},
             "verification": {},
+            "settings": {"thinking_mode": self.thinking_mode},
             "repair_history": [],
             "final_result": {},
             "timing": {"start_time": started, "end_time": None, "elapsed_seconds": 0.0},
@@ -63,15 +69,21 @@ class MathAgentOrchestrator:
                     attempts=attempt,
                     elapsed_seconds=time.time() - started,
                 )
+                if result.get("problem_type") in ("", "unknown") and route_hint["primary_domain"] != "unknown":
+                    result["problem_type"] = route_hint["primary_domain"]
+                if result.get("domain_candidates") in ([], ["unknown"]) and route_hint["domain_candidates"] != ["unknown"]:
+                    result["domain_candidates"] = route_hint["domain_candidates"]
                 validation = validate_result(result, self.schema)
                 result["_meta"]["schema_valid"] = validation.valid
                 result["_meta"]["schema_error"] = validation.error
                 log["solver_result"] = result
                 log["route"] = {
-                    "primary_domain": result.get("problem_type", "unknown"),
-                    "domain_candidates": result.get("domain_candidates", ["unknown"]),
+                    "primary_domain": result.get("problem_type") or route_hint["primary_domain"],
+                    "domain_candidates": result.get("domain_candidates") or route_hint["domain_candidates"],
+                    "local_route_hint": route_hint,
                     "task_type": result.get("task_type", "unknown"),
                     "needs_tool_verification": self.enable_tool_verify,
+                    "thinking_mode": self.thinking_mode,
                 }
                 log["plan"] = result.get("reasoning_plan", [])
                 log["verification"] = result.get("verification", {})
@@ -109,7 +121,7 @@ class MathAgentOrchestrator:
                 messages=messages,
                 temperature=0.1,
                 max_tokens=8192,
-                thinking_mode=True,
+                thinking_mode=self.thinking_mode,
             )
         except TypeError:
             return self.client.chat(

@@ -12,6 +12,7 @@ class ReasoningAgent:
         self.max_retries = int(kwargs.get("max_retries", 1))
         self.temperature = float(kwargs.get("temperature", 0.2))
         self.max_tokens = int(kwargs.get("max_tokens", 4096))
+        self.thinking_mode = bool(kwargs.get("thinking_mode", True))
         self.orchestrator = None
 
         try:
@@ -23,6 +24,7 @@ class ReasoningAgent:
                 enable_repair=True,
                 enable_tool_verify=False,
                 backend="simple",
+                thinking_mode=self.thinking_mode,
             )
         except Exception:
             self.orchestrator = None
@@ -45,18 +47,31 @@ class ReasoningAgent:
 
             response = self._direct_model_call(problem, safe_metadata)
             final_response = extract_final_answer(self._normalize_model_response(response), problem=problem)
-            trace = [make_trace_step("fallback", "direct client.chat call")]
+            trace = [
+                make_trace_step(
+                    "fallback",
+                    {"mode": "direct client.chat call", "thinking_mode": self.thinking_mode},
+                )
+            ]
             return self._json_safe_result(final_response, trace)
         except Exception as exc:
             return self._fallback_result(f"{type(exc).__name__}: {str(exc)[:300]}")
 
     def _direct_model_call(self, problem: str, metadata: Dict[str, Any]) -> Any:
         messages = self._build_direct_prompt(problem, metadata)
-        return self.client.chat(
-            messages=messages,
-            temperature=self.temperature,
-            max_tokens=self.max_tokens,
-        )
+        try:
+            return self.client.chat(
+                messages=messages,
+                temperature=self.temperature,
+                max_tokens=self.max_tokens,
+                thinking_mode=self.thinking_mode,
+            )
+        except TypeError:
+            return self.client.chat(
+                messages=messages,
+                temperature=self.temperature,
+                max_tokens=self.max_tokens,
+            )
 
     def _build_direct_prompt(self, problem: str, metadata: Dict[str, Any]) -> List[Dict[str, str]]:
         subject = metadata.get("subject") or metadata.get("type") or metadata.get("category") or ""

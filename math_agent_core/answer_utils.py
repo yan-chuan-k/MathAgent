@@ -7,6 +7,27 @@ from typing import Any, Optional
 
 DEFAULT_FALLBACK = "无法确定"
 
+_PREFIX_RE = re.compile(
+    r"^\s*(?:"
+    r"final\s*answer|final_response|answer|result|conclusion|"
+    r"最终答案|最后答案|答案|答|结果|结论|所以答案为|因此答案为"
+    r")\s*[:：]\s*",
+    flags=re.IGNORECASE,
+)
+
+_ANSWER_MARKERS = (
+    "final answer",
+    "final_response",
+    "answer",
+    "result",
+    "conclusion",
+    "最终答案",
+    "最后答案",
+    "答案",
+    "结果",
+    "结论",
+)
+
 
 def extract_final_answer(text: str, problem: Optional[str] = None) -> str:
     if text is None:
@@ -18,39 +39,24 @@ def extract_final_answer(text: str, problem: Optional[str] = None) -> str:
     value = _strip_markdown_fences(value)
 
     parsed = _try_parse_json(value)
-    if isinstance(parsed, dict):
-        for key in ("final_response", "answer", "final_answer", "content", "text"):
-            candidate = parsed.get(key)
-            if isinstance(candidate, dict):
-                candidate = candidate.get("answer")
-            if isinstance(candidate, str) and candidate.strip():
-                return normalize_final_response(candidate, problem=problem)
+    extracted = _extract_from_json_value(parsed)
+    if extracted:
+        return normalize_final_response(extracted, problem=problem)
 
     lines = [line.strip() for line in value.splitlines() if line.strip()]
-    markers = (
-        "final answer",
-        "final_response",
-        "answer",
-        "答案",
-        "最终答案",
-        "结论",
-    )
     for line in reversed(lines):
         lowered = line.lower()
-        if any(marker in lowered for marker in markers):
-            cleaned = re.sub(
-                r"^\s*(final\s*answer|final_response|answer|答案|最终答案|结论)\s*[:：]\s*",
-                "",
-                line,
-                flags=re.IGNORECASE,
-            )
-            if cleaned.strip():
+        if any(marker in lowered for marker in _ANSWER_MARKERS):
+            cleaned = _PREFIX_RE.sub("", line).strip()
+            if cleaned:
                 return normalize_final_response(cleaned, problem=problem)
 
-    if len(lines) > 1:
-        short_tail = lines[-1]
-        if 0 < len(short_tail) <= 500:
-            return normalize_final_response(short_tail, problem=problem)
+    latex_boxed = _extract_latex_boxed(value)
+    if latex_boxed:
+        return normalize_final_response(latex_boxed, problem=problem)
+
+    if len(lines) > 1 and 0 < len(lines[-1]) <= 500:
+        return normalize_final_response(lines[-1], problem=problem)
 
     return normalize_final_response(value, problem=problem)
 
@@ -60,9 +66,9 @@ def normalize_final_response(answer: str, problem: Optional[str] = None) -> str:
         return DEFAULT_FALLBACK
     normalized = str(answer).strip()
     normalized = _strip_markdown_fences(normalized)
-    normalized = re.sub(r"^\s*(final\s*answer|final_response|answer|答案|最终答案|结论)\s*[:：]\s*", "", normalized, flags=re.IGNORECASE)
-    normalized = re.sub(r"\s+", " ", normalized).strip()
+    normalized = _PREFIX_RE.sub("", normalized).strip()
     normalized = normalized.strip("`")
+    normalized = re.sub(r"\s+", " ", normalized).strip()
 
     if not normalized:
         return DEFAULT_FALLBACK
@@ -88,15 +94,35 @@ def _try_parse_json(text: str) -> Any:
         return None
 
 
+def _extract_from_json_value(value: Any) -> Optional[str]:
+    if isinstance(value, dict):
+        for key in ("final_response", "answer", "final_answer", "content", "text"):
+            candidate = value.get(key)
+            if isinstance(candidate, dict):
+                nested = _extract_from_json_value(candidate)
+                if nested:
+                    return nested
+            if isinstance(candidate, str) and candidate.strip():
+                return candidate.strip()
+    return None
+
+
+def _extract_latex_boxed(text: str) -> Optional[str]:
+    match = re.search(r"\\boxed\{([^{}]*(?:\{[^{}]*\}[^{}]*)*)\}", text)
+    if match:
+        return match.group(1).strip()
+    return None
+
+
 def _looks_like_proof(text: str) -> bool:
     lowered = text.lower()
-    proof_markers = ("prove", "proof", "show that", "证明", "证得", "命题")
+    proof_markers = ("prove", "proof", "show that", "证明", "证得", "命题", "成立")
     return any(marker in lowered for marker in proof_markers)
 
 
 def _truncate_answer(text: str, max_length: int) -> str:
-    tail_markers = ("therefore", "thus", "hence", "so", "答案", "最终", "结论", "所以", "因此")
-    sentences = re.split(r"(?<=[。.!?])\s+", text)
+    tail_markers = ("therefore", "thus", "hence", "so", "所以", "因此", "故", "结论", "最终答案")
+    sentences = re.split(r"(?<=[。.!?；;])\s+", text)
     for sentence in reversed(sentences):
         lowered = sentence.lower()
         if any(marker in lowered for marker in tail_markers) and len(sentence) <= max_length:
