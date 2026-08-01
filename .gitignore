@@ -13,6 +13,7 @@ invalid_results.jsonl
 validation_summary.json
 *.docx
 !math_agent_project_record.docx
+!math_agent_project_record_updated.docx
 AGENTS.md
 generate_project_doc.py
 input.json
