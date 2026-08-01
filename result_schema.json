@@ -21,7 +21,7 @@
     },
     "task_type": {
       "type": "string",
-      "enum": ["calculation", "proof", "derivation", "choice", "unknown"]
+      "enum": ["calculation", "proof", "derivation", "choice", "classification", "construction", "counterexample", "unknown"]
     },
     "domain_candidates": {
       "type": "array",
@@ -59,7 +59,7 @@
         },
         "answer_type": {
           "type": "string",
-          "enum": ["numeric", "expression", "closed_form", "proof", "set", "interval", "matrix", "unknown"]
+          "enum": ["numeric", "expression", "closed_form", "proof", "set", "interval", "matrix", "vector", "function", "distribution", "choice", "boolean", "text", "unknown"]
         }
       }
     },
@@ -78,9 +78,21 @@
         "verification_process": {
           "type": "string"
         },
+        "checks": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
         "confidence": {
           "type": "number"
         }
+      }
+    },
+    "assumptions": {
+      "type": "array",
+      "items": {
+        "type": "string"
       }
     },
     "learning_hints": {

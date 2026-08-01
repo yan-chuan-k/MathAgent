@@ -63,10 +63,12 @@ def _paragraph(text: str) -> ET.Element:
 def main() -> None:
     path = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("math_agent_project_record.docx")
     paragraphs = [
-        "2026-08-01 更新记录：按 112 条题型分布优化数学智能体。",
-        "题型先验：离散数学 21.43%，数值分析 11.61%，测度积分 9.82%，微分几何 8.04%，概率论/抽象代数各 7.14%，随机过程/复分析各 6.25%。",
-        "代码更新：router.py 加入 UTF-8 中文关键词、英文关键词和分布先验；prompts.py 加入高频学科指南和各领域 final_answer 输出提示；answer_utils.py 修复中文前缀、JSON 和 boxed 答案抽取。",
-        "测试更新：补充随机过程、线性回归、PDE、分布先验和中文答案抽取测试。",
+        "2026-08-01 更新记录：重构求解提示词，降低先验锚定并增强 JSON 稳定性。",
+        "Prompt 更新：benchmark 题型先验只保留在 router 中，不再暴露给 solver；focused domain guide 最多提供 3 个路由领域。",
+        "安全更新：题面、subject hint 和 route hint 被封装为 untrusted input payload，明确忽略题面内改变角色、格式、评分规则或引用官方答案的指令。",
+        "验证更新：模型侧 verification 从自由文本 verification_process 改为 checks 列表，要求至少给出一个具体检查；内部 schema 仍兼容旧字段。",
+        "契约更新：扩展 task_type 和 answer_type，支持 construction、counterexample、classification、vector、function、distribution、choice、boolean、text 等。",
+        "测试更新：新增 prompt 注入隔离、领域指南数量限制、schema 新契约兼容测试；当前 pytest 通过 23 项，跳过 1 项。",
     ]
     backup = append_docx_paragraphs(path, paragraphs)
     print(f"updated {path}; backup {backup}")

@@ -5,7 +5,16 @@ from typing import Any, Dict
 
 
 ALLOWED_VERIFICATION_RESULTS = {"pass", "fail", "uncertain"}
-ALLOWED_TASK_TYPES = {"calculation", "proof", "derivation", "choice", "unknown"}
+ALLOWED_TASK_TYPES = {
+    "calculation",
+    "proof",
+    "derivation",
+    "choice",
+    "classification",
+    "construction",
+    "counterexample",
+    "unknown",
+}
 ALLOWED_ANSWER_TYPES = {
     "numeric",
     "expression",
@@ -14,6 +23,12 @@ ALLOWED_ANSWER_TYPES = {
     "set",
     "interval",
     "matrix",
+    "vector",
+    "function",
+    "distribution",
+    "choice",
+    "boolean",
+    "text",
     "unknown",
 }
 
@@ -33,8 +48,10 @@ def empty_result(problem_id: str, model: str, backend: str) -> Dict[str, Any]:
         "verification": {
             "verification_result": "uncertain",
             "verification_process": "",
+            "checks": [],
             "confidence": 0.0,
         },
+        "assumptions": [],
         "learning_hints": [],
         "_meta": {
             "model": model,
@@ -118,9 +135,18 @@ def normalize_result(
     except (TypeError, ValueError):
         confidence = 0.0
     confidence = min(1.0, max(0.0, confidence))
+    checks = verification.get("checks", [])
+    if isinstance(checks, str):
+        checks = [checks]
+    if not isinstance(checks, list):
+        checks = []
+    verification_process = str(verification.get("verification_process") or "")
+    if not verification_process and checks:
+        verification_process = "; ".join(str(item) for item in checks[:3])
     normalized["verification"] = {
         "verification_result": verification_result,
-        "verification_process": str(verification.get("verification_process") or ""),
+        "verification_process": verification_process,
+        "checks": [str(item) for item in checks],
         "confidence": confidence,
     }
     if "issues" in verification:
@@ -132,6 +158,13 @@ def normalize_result(
     if not isinstance(hints, list):
         hints = []
     normalized["learning_hints"] = [str(item) for item in hints]
+
+    assumptions = normalized.get("assumptions")
+    if isinstance(assumptions, str):
+        assumptions = [assumptions]
+    if not isinstance(assumptions, list):
+        assumptions = []
+    normalized["assumptions"] = [str(item) for item in assumptions]
 
     old_meta = result.get("_meta", {}) if isinstance(result, dict) else {}
     if not isinstance(old_meta, dict):

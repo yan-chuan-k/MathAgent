@@ -73,12 +73,14 @@ class MathAgentOrchestrator:
                     result["problem_type"] = route_hint["primary_domain"]
                 if result.get("domain_candidates") in ([], ["unknown"]) and route_hint["domain_candidates"] != ["unknown"]:
                     result["domain_candidates"] = route_hint["domain_candidates"]
+                if result.get("problem_type") in ("", "unknown") and result.get("domain_candidates"):
+                    result["problem_type"] = str(result["domain_candidates"][0])
                 validation = validate_result(result, self.schema)
                 result["_meta"]["schema_valid"] = validation.valid
                 result["_meta"]["schema_error"] = validation.error
                 log["solver_result"] = result
                 log["route"] = {
-                    "primary_domain": result.get("problem_type") or route_hint["primary_domain"],
+                    "primary_domain": (result.get("domain_candidates") or [result.get("problem_type") or route_hint["primary_domain"]])[0],
                     "domain_candidates": result.get("domain_candidates") or route_hint["domain_candidates"],
                     "local_route_hint": route_hint,
                     "task_type": result.get("task_type", "unknown"),
@@ -180,6 +182,8 @@ class MathAgentOrchestrator:
     def _verification_error(self, result: Dict[str, Any]) -> str:
         verification = result.get("verification", {})
         if verification.get("verification_result") == "fail":
+            if verification.get("checks"):
+                return "; ".join(str(item) for item in verification.get("checks", [])[:3])
             return verification.get("verification_process", "verification failed")
         if float(verification.get("confidence", 0.0)) < 0.75:
             return "confidence below threshold"

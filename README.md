@@ -93,6 +93,10 @@ Commit hash: use the final submitted commit SHA.
 
 ### 2026-08-01
 
+- Refactored solver prompt to remove benchmark priors from model-visible context; priors remain only in router scoring.
+- Limited focused domain guidance to at most three routed domains and added input-payload isolation against prompt injection.
+- Changed the model-facing verification contract from free-form `verification_process` to concrete `verification.checks`, while preserving internal compatibility.
+- Expanded schema compatibility for construction, counterexample, classification, vector, function, distribution, choice, boolean, and text answers.
 - Added the 112-problem benchmark distribution as router priors.
 - Rebuilt route keywords for high-frequency domains: discrete math, numerical analysis, measure integration, differential geometry, probability, abstract algebra, stochastic process, and complex analysis.
 - Split probability, stochastic process, statistics, and linear regression into separate routing domains.
