@@ -63,12 +63,11 @@ def _paragraph(text: str) -> ET.Element:
 def main() -> None:
     path = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("math_agent_project_record.docx")
     paragraphs = [
-        "2026-08-01 更新记录：重构求解提示词，降低先验锚定并增强 JSON 稳定性。",
-        "Prompt 更新：benchmark 题型先验只保留在 router 中，不再暴露给 solver；focused domain guide 最多提供 3 个路由领域。",
-        "安全更新：题面、subject hint 和 route hint 被封装为 untrusted input payload，明确忽略题面内改变角色、格式、评分规则或引用官方答案的指令。",
-        "验证更新：模型侧 verification 从自由文本 verification_process 改为 checks 列表，要求至少给出一个具体检查；内部 schema 仍兼容旧字段。",
-        "契约更新：扩展 task_type 和 answer_type，支持 construction、counterexample、classification、vector、function、distribution、choice、boolean、text 等。",
-        "测试更新：新增 prompt 注入隔离、领域指南数量限制、schema 新契约兼容测试；当前 pytest 通过 23 项，跳过 1 项。",
+        "2026-08-01 更新记录：新增 18 类高难度诊断题集与诊断脚本。",
+        "诊断题集：sample_data/hard_diagnostics.jsonl 覆盖离散数学、数值分析、测度积分、微分几何、概率论、抽象代数、随机过程、复分析、ODE、统计推断、泛函分析、线性回归、PDE、进阶课程、高等代数、运筹学、数学分析、拓扑学。",
+        "诊断脚本：diagnose_hard_cases.py 支持路由检测、mock 管线检测和真实 API 模型检测；不会把 answer_hint 传入 agent。",
+        "离线结果：当前无 INTERN_API_KEY，无法真实评估模型答案正确性；已完成路由检测 18/18 命中，mock ReasoningAgent 管线 18/18 成功。",
+        "文档更新：README 修复乱码中文，加入 hard diagnostics 运行命令、当前离线结果和真实模型评测说明。",
     ]
     backup = append_docx_paragraphs(path, paragraphs)
     print(f"updated {path}; backup {backup}")

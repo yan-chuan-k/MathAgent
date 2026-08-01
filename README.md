@@ -41,9 +41,28 @@ For real local Intern-S calls, omit `--mock` after configuring `INTERN_API_KEY`.
 
 Thinking mode is enabled by default for clients that support `thinking_mode`; use `--no-thinking-mode` only for debugging incompatible clients.
 
+## Hard Diagnostics
+
+The repository includes one nontrivial diagnostic problem for each routed domain:
+
+```bash
+python diagnose_hard_cases.py --output_file sample_outputs/hard_route_summary.json
+python diagnose_hard_cases.py --mock --run-agent --output_file sample_outputs/hard_mock_summary.json
+python main.py --input_file sample_data/hard_diagnostics.jsonl --output_dir sample_outputs_hard_mock --mock
+```
+
+Without `INTERN_API_KEY`, these commands validate routing and output structure only. Real answer correctness requires running without `--mock` using a configured Intern-S API key.
+
+Current offline diagnostic result:
+
+```text
+18 / 18 hard diagnostic cases routed to the expected domain.
+18 / 18 hard diagnostic cases completed through the mock ReasoningAgent pipeline.
+```
+
 ## Benchmark Distribution Strategy
 
-The router and prompt strategy use the observed 112-problem distribution as a tie-breaking prior. The problem statement and metadata remain authoritative.
+The router uses the observed 112-problem distribution as a tie-breaking prior. The solver prompt does not see the full distribution; it receives only the routed domain hint.
 
 | Domain | Count | Share |
 | --- | ---: | ---: |
@@ -69,8 +88,9 @@ The router and prompt strategy use the observed 112-problem distribution as a ti
 Implementation notes:
 
 - `math_agent_core/router.py` contains UTF-8 Chinese and English keywords plus benchmark priors.
-- `math_agent_core/prompts.py` builds a focused subject guide from the top routed domains and includes output hints per domain.
+- `math_agent_core/prompts.py` builds a focused subject guide from at most three routed domains and isolates the problem statement as untrusted input.
 - `math_agent_core/answer_utils.py` normalizes Chinese/English final-answer prefixes, JSON outputs, and LaTeX `\boxed{...}` answers.
+- `result_schema.json` and `math_agent_core/schema.py` accept `verification.checks` while preserving compatibility with `verification_process`.
 
 ## Validation
 
@@ -93,6 +113,8 @@ Commit hash: use the final submitted commit SHA.
 
 ### 2026-08-01
 
+- Added hard diagnostic problems covering 18 routed domains and a `diagnose_hard_cases.py` script.
+- Verified offline routing on the hard diagnostics: 18/18 route hits; mock ReasoningAgent pipeline completed 18/18.
 - Refactored solver prompt to remove benchmark priors from model-visible context; priors remain only in router scoring.
 - Limited focused domain guidance to at most three routed domains and added input-payload isolation against prompt injection.
 - Changed the model-facing verification contract from free-form `verification_process` to concrete `verification.checks`, while preserving internal compatibility.
@@ -100,7 +122,7 @@ Commit hash: use the final submitted commit SHA.
 - Added the 112-problem benchmark distribution as router priors.
 - Rebuilt route keywords for high-frequency domains: discrete math, numerical analysis, measure integration, differential geometry, probability, abstract algebra, stochastic process, and complex analysis.
 - Split probability, stochastic process, statistics, and linear regression into separate routing domains.
-- Replaced mojibake prompt/answer text with valid UTF-8 Chinese.
+- Replaced mojibake prompt/answer/README text with valid UTF-8 Chinese.
 - Added focused domain guides and final-answer formatting hints in the solver prompt.
-- Expanded tests for router distribution priors, stochastic process, linear regression, PDE, and Chinese answer extraction.
+- Expanded tests for router distribution priors, stochastic process, linear regression, PDE, prompt contract, schema contract, and Chinese answer extraction.
 - Updated `math_agent_project_record.docx` via `update_project_record.py`; if the original Word file is open and locked, the script writes `math_agent_project_record_updated.docx` as the synchronized copy.

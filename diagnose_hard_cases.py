@@ -1,0 +1,138 @@
+from __future__ import annotations
+
+import argparse
+import json
+import os
+from pathlib import Path
+from typing import Any, Dict, Iterable, List
+
+from intern_s1_client import InternS1Client
+from math_agent_core.clients import MockClient
+from math_agent_core.router import classify_problem
+from user_agent import ReasoningAgent
+
+
+BASE_DIR = Path(__file__).resolve().parent
+
+
+def load_jsonl(path: Path) -> List[Dict[str, Any]]:
+    items = []
+    with open(path, "r", encoding="utf-8") as file:
+        for line in file:
+            line = line.strip()
+            if line:
+                items.append(json.loads(line))
+    return items
+
+
+def build_client(use_mock: bool, thinking_mode: bool = True) -> Any:
+    if use_mock:
+        return MockClient()
+    model = os.getenv("INTERN_MODEL", "intern-s2-preview-397b")
+    base_url = os.getenv("INTERN_API_BASE", "https://chat.intern-ai.org.cn/api/v1/")
+    return InternS1Client(model=model, base_url=base_url, thinking_mode=thinking_mode)
+
+
+def evaluate(
+    input_file: Path,
+    output_file: Path,
+    use_mock: bool,
+    run_agent: bool,
+    thinking_mode: bool,
+) -> Dict[str, Any]:
+    items = load_jsonl(input_file)
+    client = build_client(use_mock=use_mock, thinking_mode=thinking_mode) if run_agent else None
+    agent = ReasoningAgent(client=client, thinking_mode=thinking_mode) if client is not None else None
+    rows = []
+    route_hits = 0
+    valid_outputs = 0
+
+    for item in items:
+        problem = str(item.get("problem", ""))
+        metadata = {key: value for key, value in item.items() if key not in {"problem", "answer_hint"}}
+        route = classify_problem(problem, metadata)
+        expected = str(item.get("expected_domain", ""))
+        route_ok = route.get("primary_domain") == expected or expected in route.get("domain_candidates", [])
+        if route_ok:
+            route_hits += 1
+
+        result = None
+        final_response = ""
+        if agent is not None:
+            result = agent.solve(problem, metadata)
+            final_response = str(result.get("final_response", "")).strip() if isinstance(result, dict) else ""
+            try:
+                json.dumps(result, ensure_ascii=False)
+                if final_response:
+                    valid_outputs += 1
+            except TypeError:
+                pass
+
+        rows.append(
+            {
+                "idx": item.get("idx"),
+                "subject": item.get("subject"),
+                "expected_domain": expected,
+                "route_primary": route.get("primary_domain"),
+                "route_candidates": route.get("domain_candidates"),
+                "route_ok": route_ok,
+                "final_response": final_response,
+                "answer_hint": item.get("answer_hint"),
+                "agent_result": result,
+            }
+        )
+
+    summary = {
+        "input_file": str(input_file),
+        "total": len(items),
+        "route_hits": route_hits,
+        "route_accuracy": route_hits / len(items) if items else 0.0,
+        "run_agent": run_agent,
+        "use_mock": use_mock,
+        "valid_outputs": valid_outputs,
+        "rows": rows,
+    }
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+    with open(output_file, "w", encoding="utf-8") as file:
+        json.dump(summary, file, ensure_ascii=False, indent=2)
+    return summary
+
+
+def print_summary(summary: Dict[str, Any]) -> None:
+    print(
+        f"total={summary['total']} "
+        f"route_hits={summary['route_hits']} "
+        f"route_accuracy={summary['route_accuracy']:.3f} "
+        f"run_agent={summary['run_agent']} "
+        f"use_mock={summary['use_mock']}"
+    )
+    for row in summary["rows"]:
+        marker = "OK" if row["route_ok"] else "MISS"
+        print(
+            f"{marker} {row['idx']}: expected={row['expected_domain']} "
+            f"primary={row['route_primary']} candidates={row['route_candidates']} "
+            f"final={row['final_response'][:80]}"
+        )
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Diagnose routing and output quality on hard math cases.")
+    parser.add_argument("--input_file", default="sample_data/hard_diagnostics.jsonl")
+    parser.add_argument("--output_file", default="sample_outputs/hard_diagnostics_summary.json")
+    parser.add_argument("--mock", action="store_true", help="Use MockClient for offline pipeline checks.")
+    parser.add_argument("--run-agent", action="store_true", help="Call ReasoningAgent in addition to route checks.")
+    parser.add_argument("--no-thinking-mode", action="store_true")
+    args = parser.parse_args()
+
+    summary = evaluate(
+        input_file=BASE_DIR / args.input_file,
+        output_file=BASE_DIR / args.output_file,
+        use_mock=args.mock,
+        run_agent=args.run_agent,
+        thinking_mode=not args.no_thinking_mode,
+    )
+    print_summary(summary)
+
+
+if __name__ == "__main__":
+    main()
