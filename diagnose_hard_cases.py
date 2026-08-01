@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import sys
 from pathlib import Path
 from typing import Any, Dict, Iterable, List
 
@@ -39,8 +40,11 @@ def evaluate(
     use_mock: bool,
     run_agent: bool,
     thinking_mode: bool,
+    include_ids: set[str] | None = None,
 ) -> Dict[str, Any]:
     items = load_jsonl(input_file)
+    if include_ids:
+        items = [item for item in items if str(item.get("idx", "")) in include_ids]
     client = build_client(use_mock=use_mock, thinking_mode=thinking_mode) if run_agent else None
     agent = ReasoningAgent(client=client, thinking_mode=thinking_mode) if client is not None else None
     rows = []
@@ -99,7 +103,7 @@ def evaluate(
 
 
 def print_summary(summary: Dict[str, Any]) -> None:
-    print(
+    _safe_print(
         f"total={summary['total']} "
         f"route_hits={summary['route_hits']} "
         f"route_accuracy={summary['route_accuracy']:.3f} "
@@ -108,11 +112,19 @@ def print_summary(summary: Dict[str, Any]) -> None:
     )
     for row in summary["rows"]:
         marker = "OK" if row["route_ok"] else "MISS"
-        print(
+        _safe_print(
             f"{marker} {row['idx']}: expected={row['expected_domain']} "
             f"primary={row['route_primary']} candidates={row['route_candidates']} "
             f"final={row['final_response'][:80]}"
         )
+
+
+def _safe_print(text: str) -> None:
+    try:
+        print(text)
+    except UnicodeEncodeError:
+        encoding = sys.stdout.encoding or "utf-8"
+        print(text.encode(encoding, errors="backslashreplace").decode(encoding, errors="replace"))
 
 
 def main() -> None:
@@ -122,6 +134,7 @@ def main() -> None:
     parser.add_argument("--mock", action="store_true", help="Use MockClient for offline pipeline checks.")
     parser.add_argument("--run-agent", action="store_true", help="Call ReasoningAgent in addition to route checks.")
     parser.add_argument("--no-thinking-mode", action="store_true")
+    parser.add_argument("--idx", action="append", help="Run only the case with this idx. Can be repeated.")
     args = parser.parse_args()
 
     summary = evaluate(
@@ -130,6 +143,7 @@ def main() -> None:
         use_mock=args.mock,
         run_agent=args.run_agent,
         thinking_mode=not args.no_thinking_mode,
+        include_ids=set(args.idx) if args.idx else None,
     )
     print_summary(summary)
 

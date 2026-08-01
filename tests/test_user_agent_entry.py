@@ -41,3 +41,20 @@ def test_user_agent_enables_thinking_mode_when_client_supports_it():
     assert result["final_response"] == "2"
     assert client.thinking_mode_values
     assert all(value is True for value in client.thinking_mode_values)
+
+
+def test_user_agent_repairs_missing_gaussian_curvature_value():
+    class CurvatureClient:
+        def chat(self, messages, temperature=0.2, max_tokens=4096, thinking_mode=None):
+            return (
+                '{"final_answer": {"answer": "This value is constant on the unit sphere.", '
+                '"answer_type": "text"}, '
+                '"verification": {"verification_result": "pass", '
+                '"checks": ["Shape operator S = I, so K = det(S) = 1."], '
+                '"confidence": 1.0}}'
+            )
+
+    agent = ReasoningAgent(client=CurvatureClient())
+    result = agent.solve("计算单位球面的高斯曲率。", {"idx": 1, "subject": "微分几何"})
+
+    assert result["final_response"].startswith("K = 1")

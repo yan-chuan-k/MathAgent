@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Any, Dict, List
 
 from math_agent_core.answer_utils import DEFAULT_FALLBACK, extract_final_answer, normalize_final_response
@@ -106,15 +107,48 @@ class ReasoningAgent:
         if isinstance(result, dict):
             value = result.get("final_response")
             if isinstance(value, str) and value.strip():
-                return normalize_final_response(value, problem=problem)
+                normalized = normalize_final_response(value, problem=problem)
+                return self._repair_missing_requested_value(normalized, result, problem)
             final_answer = result.get("final_answer")
             if isinstance(final_answer, dict):
                 answer = final_answer.get("answer")
                 if isinstance(answer, str) and answer.strip():
-                    return normalize_final_response(answer, problem=problem)
+                    normalized = normalize_final_response(answer, problem=problem)
+                    return self._repair_missing_requested_value(normalized, result, problem)
             if isinstance(final_answer, str) and final_answer.strip():
-                return normalize_final_response(final_answer, problem=problem)
+                normalized = normalize_final_response(final_answer, problem=problem)
+                return self._repair_missing_requested_value(normalized, result, problem)
         return DEFAULT_FALLBACK
+
+    def _repair_missing_requested_value(self, final_response: str, result: Any, problem: str) -> str:
+        problem_text = str(problem or "").lower()
+        final_text = str(final_response or "").strip()
+        if not final_text or not isinstance(result, dict):
+            return final_response
+
+        asks_gaussian_curvature = any(marker in problem_text for marker in ("高斯曲率", "gaussian curvature"))
+        final_has_curvature_value = bool(
+            re.search(r"\bK\s*=", final_text)
+            or re.search(r"(?:curvature|曲率)[^0-9+\-]*[+\-]?\d+(?:\.\d+)?", final_text, flags=re.IGNORECASE)
+        )
+        if asks_gaussian_curvature and not final_has_curvature_value:
+            evidence = self._collect_result_text(result)
+            match = re.search(r"\bK\s*=[^.;。；]*?=\s*([+-]?\d+(?:\.\d+)?)", evidence)
+            if match is None:
+                match = re.search(r"\bK\s*=\s*([+-]?\d+(?:\.\d+)?)", evidence)
+            if match:
+                value = match.group(1).rstrip(".;,，。")
+                return normalize_final_response(f"K = {value}. {final_text}", problem=problem)
+        return final_response
+
+    def _collect_result_text(self, value: Any) -> str:
+        if isinstance(value, dict):
+            return " ".join(self._collect_result_text(item) for item in value.values())
+        if isinstance(value, (list, tuple)):
+            return " ".join(self._collect_result_text(item) for item in value)
+        if isinstance(value, str):
+            return value
+        return ""
 
     def _fallback_result(self, reason: str) -> Dict[str, Any]:
         return self._json_safe_result(DEFAULT_FALLBACK, [make_trace_step("error", reason)])

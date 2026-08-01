@@ -114,7 +114,7 @@ DOMAIN_OUTPUT_HINTS = {
     "discrete_math": "Final answer should be an integer, formula, recurrence, graph property, or short proof.",
     "numerical_analysis": "Include requested precision, error bound, convergence order, or stability condition in final_answer.answer.",
     "measure_integration": "For proof tasks, include the theorem name and the checked condition in the concise proof.",
-    "differential_geometry": "State sign convention-sensitive quantities explicitly, such as curvature or connection coefficients.",
+    "differential_geometry": "Start with the requested geometric quantity and value, e.g. K=1. State sign convention-sensitive quantities explicitly, such as curvature or connection coefficients.",
     "probability": "Give exact probability/distribution/expectation when possible and identify conditioning if used.",
     "stochastic_process": "Name the process property used and give transition, distribution, expectation, or stopping result clearly.",
     "abstract_algebra": "Use standard algebra notation for groups, rings, fields, ideals, quotients, and generators.",
@@ -171,6 +171,8 @@ self-talk, alternative abandoned attempts, or meta-commentary.
 ANSWER POLICY
 
 - The primary judged field is final_answer.answer.
+- Start final_answer.answer with the requested quantity and its value or conclusion.
+- Do not omit the main requested value from final_answer.answer even if it appears in solution or verification.
 - For a calculation, put the simplified exact result in final_answer.answer.
 - Give a decimal approximation only when requested or mathematically necessary.
 - For a multiple-choice problem, include the option label and, when useful, its mathematical content.
@@ -198,7 +200,7 @@ OUTPUT_CONTRACT = {
     "reasoning_plan": ["short statement of theorem, formula, algorithm, or invariant"],
     "solution": [{"step": 1, "content": "concise auditable mathematical step"}],
     "final_answer": {
-        "answer": "short judgeable answer; complete concise proof for proof tasks",
+        "answer": "short judgeable answer starting with the requested quantity/value; complete concise proof for proof tasks",
         "answer_type": list(ANSWER_TYPES),
     },
     "verification": {

@@ -60,6 +60,14 @@ Current offline diagnostic result:
 18 / 18 hard diagnostic cases completed through the mock ReasoningAgent pipeline.
 ```
 
+Current real diagnostic notes with local `.env`:
+
+```text
+18 / 18 hard diagnostic cases produced non-empty JSON-serializable final_response values.
+The differential-geometry case exposed a model formatting issue where K=1 appeared in verification but not final_response.
+ReasoningAgent now repairs this specific missing Gaussian-curvature value from structured verification evidence.
+```
+
 ## Benchmark Distribution Strategy
 
 The router uses the observed 112-problem distribution as a tie-breaking prior. The solver prompt does not see the full distribution; it receives only the routed domain hint.
@@ -114,6 +122,10 @@ Commit hash: use the final submitted commit SHA.
 ### 2026-08-01
 
 - Added hard diagnostic problems covering 18 routed domains and a `diagnose_hard_cases.py` script.
+- Confirmed `.env` loading for real local Intern-S diagnostics without printing secrets.
+- Fixed Windows console Unicode printing in `diagnose_hard_cases.py`.
+- Corrected hard diagnostic answer hints for measure integration, complex analysis, and ODE.
+- Added a conservative final-response repair for Gaussian-curvature tasks when verification contains `K = ... = value` but final answer omits it.
 - Verified offline routing on the hard diagnostics: 18/18 route hits; mock ReasoningAgent pipeline completed 18/18.
 - Refactored solver prompt to remove benchmark priors from model-visible context; priors remain only in router scoring.
 - Limited focused domain guidance to at most three routed domains and added input-payload isolation against prompt injection.

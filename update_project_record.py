@@ -63,11 +63,12 @@ def _paragraph(text: str) -> ET.Element:
 def main() -> None:
     path = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("math_agent_project_record.docx")
     paragraphs = [
-        "2026-08-01 更新记录：新增 18 类高难度诊断题集与诊断脚本。",
-        "诊断题集：sample_data/hard_diagnostics.jsonl 覆盖离散数学、数值分析、测度积分、微分几何、概率论、抽象代数、随机过程、复分析、ODE、统计推断、泛函分析、线性回归、PDE、进阶课程、高等代数、运筹学、数学分析、拓扑学。",
-        "诊断脚本：diagnose_hard_cases.py 支持路由检测、mock 管线检测和真实 API 模型检测；不会把 answer_hint 传入 agent。",
-        "离线结果：当前无 INTERN_API_KEY，无法真实评估模型答案正确性；已完成路由检测 18/18 命中，mock ReasoningAgent 管线 18/18 成功。",
-        "文档更新：README 修复乱码中文，加入 hard diagnostics 运行命令、当前离线结果和真实模型评测说明。",
+        "2026-08-01 更新记录：使用 .env 中的 Intern-S API key 运行真实高难诊断，并修复发现的问题。",
+        "真实诊断：18 个高难诊断题均返回非空、JSON 可序列化 final_response；路由仍为 18/18 命中。",
+        "问题修复：diagnose_hard_cases.py 在 Windows 控制台打印数学 Unicode 时可能触发 UnicodeEncodeError，已加入安全打印兜底。",
+        "诊断题修正：修正测度积分、复分析、常微分方程三道题的 answer_hint，避免后续评估参考答案误导。",
+        "答案补救：微分几何题暴露模型把 K=1 写入 verification 但 final_response 漏主值的问题；ReasoningAgent 已加入保守补救，仅在题目询问高斯曲率且 verification/solution 中存在 K=...=数值时补到 final_response 开头。",
+        "文档更新：README 记录 .env 真实诊断结果、Unicode 打印修复、诊断题答案提示修正和高斯曲率补救逻辑。",
     ]
     backup = append_docx_paragraphs(path, paragraphs)
     print(f"updated {path}; backup {backup}")
