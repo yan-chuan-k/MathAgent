@@ -64,8 +64,13 @@ class MockClient:
 class ScriptedClient:
     model = "scripted-client"
 
-    def __init__(self, responses: List[Any]):
-        self.responses = list(responses)
+    def __init__(self, responses: List[Any] | Dict[str, List[Any]]):
+        if isinstance(responses, dict):
+            self.responses_by_role = {str(key): list(value) for key, value in responses.items()}
+            self.responses = []
+        else:
+            self.responses_by_role = {}
+            self.responses = list(responses)
         self.calls: List[Dict[str, Any]] = []
 
     def chat(
@@ -83,12 +88,32 @@ class ScriptedClient:
                 "thinking_mode": thinking_mode,
             }
         )
-        if not self.responses:
-            return json.dumps(self._default_result(), ensure_ascii=False)
-        response = self.responses.pop(0)
+        role = self._detect_role(messages)
+        role_queue = self.responses_by_role.get(role)
+        if role_queue:
+            response = role_queue.pop(0)
+        else:
+            default_queue = self.responses_by_role.get("default")
+            if default_queue:
+                response = default_queue.pop(0)
+            elif self.responses:
+                response = self.responses.pop(0)
+            else:
+                return json.dumps(self._default_result(), ensure_ascii=False)
         if isinstance(response, str):
             return response
         return json.dumps(response, ensure_ascii=False)
+
+    def _detect_role(self, messages: List[Dict[str, str]]) -> str:
+        system_text = " ".join(message.get("content", "") for message in messages if message.get("role") == "system")
+        lowered = system_text.lower()
+        if "mathematical critic" in lowered:
+            return "critic"
+        if "mathematical planning agent" in lowered:
+            return "planner"
+        if "final answer formatter" in lowered:
+            return "finalizer"
+        return "solver"
 
     def _default_result(self) -> Dict[str, Any]:
         return {

@@ -218,6 +218,7 @@ def build_solver_messages(
     problem: Dict[str, Any],
     problem_text: str,
     repair_context: Dict[str, Any] | None = None,
+    strategy: str | None = None,
 ) -> list[dict[str, str]]:
     problem_id = str(problem.get("problem_id", "UNKNOWN"))
     subject_hint = _safe_string(problem.get("subject") or problem.get("type") or problem.get("category") or "unknown")
@@ -243,6 +244,13 @@ def build_solver_messages(
             "Use this context to fix only the identified mathematical or formatting failure. "
             "Do not repeat a strategy that produced the same residual or contradiction.\n"
         )
+    strategy_block = ""
+    if strategy:
+        strategy_block = (
+            "\n\nSOLVING_STRATEGY\n"
+            f"{_truncate_for_prompt(strategy)}\n"
+            "Use this strategy as the main route. If it is mathematically unsuitable, state why in assumptions and switch conservatively.\n"
+        )
     user_prompt = (
         "Solve the mathematical problem in INPUT_PAYLOAD.\n\n"
         "INPUT_PAYLOAD_BEGIN\n"
@@ -262,6 +270,7 @@ def build_solver_messages(
         "- Differential equations/PDE: substitute the solution and check all initial or boundary conditions.\n"
         "- Optimization: check feasibility, optimality conditions, and the reported objective value.\n"
         "- If verification fails, repair the solution before returning JSON.\n\n"
+        f"{strategy_block}"
         f"{repair_block}"
         "OUTPUT_CONTRACT\n"
         f"{json.dumps(OUTPUT_CONTRACT, ensure_ascii=False, indent=2)}\n\n"
@@ -271,6 +280,106 @@ def build_solver_messages(
         {"role": "system", "content": BASE_SYSTEM_PROMPT},
         {"role": "user", "content": user_prompt},
     ]
+
+
+def build_planner_messages(problem: Dict[str, Any], problem_text: str, strategies: list[str]) -> list[dict[str, str]]:
+    payload = {
+        "problem_id": str(problem.get("problem_id", "UNKNOWN")),
+        "route_hint": _normalize_route_hint(problem.get("_route_hint")),
+        "problem_statement": problem_text,
+        "available_strategies": strategies[:6],
+    }
+    return [
+        {
+            "role": "system",
+            "content": (
+                "You are a mathematical planning agent. Return one compact JSON object. "
+                "Do not solve fully. Do not provide hidden reasoning."
+            ),
+        },
+        {
+            "role": "user",
+            "content": (
+                "Select promising independent strategies for this problem.\n"
+                f"{json.dumps(payload, ensure_ascii=False, indent=2)}\n"
+                'Return JSON: {"selected_strategies": ["..."], "open_goals": ["..."], "difficulty": "simple|medium|hard"}.'
+            ),
+        },
+    ]
+
+
+def build_critic_messages(problem_text: str, candidate: Dict[str, Any], evidence: list[Dict[str, Any]]) -> list[dict[str, str]]:
+    payload = {
+        "problem_statement": problem_text,
+        "candidate": candidate,
+        "system_evidence": evidence[:5],
+    }
+    return [
+        {
+            "role": "system",
+            "content": (
+                "You are an independent mathematical critic. Find the first substantive mathematical error, "
+                "missing case, unsupported lemma, or format failure. Do not rewrite the full answer."
+            ),
+        },
+        {
+            "role": "user",
+            "content": (
+                f"{json.dumps(payload, ensure_ascii=False, indent=2)}\n"
+                "Return exactly one JSON object with keys: status (pass|fail|inconclusive), "
+                "failure_kind, first_error, missing_targets, suggested_repair."
+            ),
+        },
+    ]
+
+
+def build_reviser_messages(
+    problem: Dict[str, Any],
+    problem_text: str,
+    failed_candidate: Dict[str, Any],
+    critic: Dict[str, Any],
+    evidence: list[Dict[str, Any]],
+) -> list[dict[str, str]]:
+    repair_context = {
+        "failure_kind": critic.get("failure_kind") or "inconclusive",
+        "failure_details": critic.get("first_error") or critic.get("suggested_repair") or "",
+        "evidence": evidence[:5],
+        "previous_answer": _candidate_answer(failed_candidate),
+        "instruction": "Repair only the identified error and return the normal solver JSON contract.",
+    }
+    problem_with_context = dict(problem)
+    problem_with_context["_route_hint"] = problem.get("_route_hint")
+    return build_solver_messages(problem_with_context, problem_text, repair_context=repair_context, strategy="local_repair")
+
+
+def build_finalizer_messages(problem_text: str, selected_candidate: Dict[str, Any]) -> list[dict[str, str]]:
+    payload = {
+        "problem_statement": problem_text,
+        "selected_candidate": selected_candidate,
+    }
+    return [
+        {
+            "role": "system",
+            "content": (
+                "You are a final answer formatter. Use only the supplied selected candidate. "
+                "Do not introduce new claims. Return one JSON object."
+            ),
+        },
+        {
+            "role": "user",
+            "content": (
+                f"{json.dumps(payload, ensure_ascii=False, indent=2)}\n"
+                'Return JSON: {"final_response": "short judgeable final answer"}.'
+            ),
+        },
+    ]
+
+
+def _candidate_answer(candidate: Dict[str, Any]) -> str:
+    final_answer = candidate.get("final_answer") if isinstance(candidate, dict) else None
+    if isinstance(final_answer, dict):
+        return str(final_answer.get("answer") or "")
+    return ""
 
 
 def _safe_repair_context(value: Dict[str, Any]) -> Dict[str, Any]:

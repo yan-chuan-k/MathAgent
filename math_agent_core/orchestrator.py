@@ -5,10 +5,14 @@ import time
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+from .answer_utils import normalize_final_response
+from .candidate import CandidateSolution
+from .evaluation import answer_cluster_key
 from .json_utils import ValidationResult, extract_json_from_text, repair_json_locally, validate_result
-from .prompts import build_solver_messages
+from .prompts import build_critic_messages, build_finalizer_messages, build_planner_messages, build_solver_messages
 from .router import classify_problem
 from .schema import empty_result
+from .search import choose_strategy_budget, rank_candidates, strategies_for_domain
 from .state import EvidenceStatus, FailureKind, OverallStatus, SolveAssessment, VerificationEvidence
 from .tools import run_sympy_verification
 
@@ -23,12 +27,18 @@ class MathAgentOrchestrator:
         backend: str = "simple",
         schema_path: Optional[Path] = None,
         thinking_mode: bool = True,
+        max_candidates: int = 1,
+        enable_critic: bool = True,
+        enable_finalizer: bool = True,
     ):
         self.client = client
         self.max_retries = max_retries
         self.enable_repair = enable_repair
         self.enable_tool_verify = enable_tool_verify
         self.thinking_mode = thinking_mode
+        self.max_candidates = max(1, int(max_candidates))
+        self.enable_critic = enable_critic
+        self.enable_finalizer = enable_finalizer
         self.backend = self._resolve_backend(backend)
         self.model = getattr(client, "model", "intern-s2-preview-397b")
         self.schema = self._load_schema(schema_path)
@@ -49,6 +59,7 @@ class MathAgentOrchestrator:
             "plan": [],
             "solver_raw_output": "",
             "solver_result": {},
+            "candidates": [],
             "verification": {},
             "verification_evidence": [],
             "settings": {"thinking_mode": self.thinking_mode},
@@ -58,81 +69,50 @@ class MathAgentOrchestrator:
             "errors": [],
         }
 
-        result: Dict[str, Any] = empty_result(problem_id, model=self.model, backend=self.backend)
-        repair_context: Dict[str, Any] | None = None
-        for attempt in range(1, self.max_retries + 2):
-            try:
-                raw_output = self._call_solver(problem, problem_text, repair_context=repair_context)
-                log["solver_raw_output"] = raw_output
-                parsed = extract_json_from_text(raw_output)
-                result = repair_json_locally(
-                    parsed,
-                    problem_id=problem_id,
-                    model=self.model,
-                    backend=self.backend,
-                    attempts=attempt,
-                    elapsed_seconds=time.time() - started,
-                )
-                if result.get("problem_type") in ("", "unknown") and route_hint["primary_domain"] != "unknown":
-                    result["problem_type"] = route_hint["primary_domain"]
-                if result.get("domain_candidates") in ([], ["unknown"]) and route_hint["domain_candidates"] != ["unknown"]:
-                    result["domain_candidates"] = route_hint["domain_candidates"]
-                if result.get("problem_type") in ("", "unknown") and result.get("domain_candidates"):
-                    result["problem_type"] = str(result["domain_candidates"][0])
-                validation = validate_result(result, self.schema)
-                result["_meta"]["schema_valid"] = validation.valid
-                result["_meta"]["schema_error"] = validation.error
-                log["solver_result"] = result
-                log["route"] = {
-                    "primary_domain": (result.get("domain_candidates") or [result.get("problem_type") or route_hint["primary_domain"]])[0],
-                    "domain_candidates": result.get("domain_candidates") or route_hint["domain_candidates"],
-                    "local_route_hint": route_hint,
-                    "task_type": result.get("task_type", "unknown"),
-                    "needs_tool_verification": self.enable_tool_verify,
-                    "thinking_mode": self.thinking_mode,
-                }
-                log["plan"] = result.get("reasoning_plan", [])
-                evidence = self._run_verifiers(problem_text, result) if self.enable_tool_verify else []
-                assessment = self._assess_result(result, validation, evidence)
-                self._apply_assessment(result, assessment)
-                final_validation = validate_result(result, self.schema)
-                result["_meta"]["schema_valid"] = final_validation.valid
-                result["_meta"]["schema_error"] = final_validation.error
-                if not final_validation.valid:
-                    assessment = self._assess_result(result, final_validation, evidence)
-                    self._apply_assessment(result, assessment)
-                log["verification"] = result.get("verification", {})
-                log["verification_evidence"] = assessment.evidence_dicts()
-
-                if self._needs_repair(result, assessment) and attempt <= self.max_retries:
-                    repair_context = self._build_repair_context(result, assessment, validation)
-                    log["repair_history"].append(
-                        {
-                            "attempt": attempt + 1,
-                            "failure_kind": assessment.failure_kind,
-                            "previous_error": assessment.failure_details or validation.error or self._verification_error(result),
-                            "repair_strategy": "targeted retry with concrete validation evidence",
-                        }
-                    )
-                    continue
+        strategies = self._select_strategies(problem, problem_text, route_hint)
+        candidates: list[CandidateSolution] = []
+        for candidate_index, strategy in enumerate(strategies, start=1):
+            candidate = self._solve_candidate(
+                problem=problem,
+                problem_text=problem_text,
+                problem_id=problem_id,
+                route_hint=route_hint,
+                strategy=strategy,
+                candidate_index=candidate_index,
+                started=started,
+                log=log,
+            )
+            candidates.append(candidate)
+            if candidate.assessment.overall_status == OverallStatus.SOLVED.value and candidate_index == 1:
                 break
-            except Exception as exc:
-                log["errors"].append({"attempt": attempt, "error": str(exc)})
-                result = empty_result(problem_id, model=self.model, backend=self.backend)
-                result["_meta"]["attempts"] = attempt
-                result["_meta"]["schema_error"] = str(exc)
-                result["_meta"]["overall_status"] = OverallStatus.ERROR.value
-                result["_meta"]["failure_kind"] = FailureKind.JSON_PARSE.value
-                result["_meta"]["failure_details"] = str(exc)[:500]
-                if attempt <= self.max_retries:
-                    repair_context = {
-                        "failure_kind": FailureKind.JSON_PARSE.value,
-                        "failure_details": str(exc)[:500],
-                        "instruction": "Return exactly one valid JSON object matching the schema. Do not change the math unless needed.",
-                    }
-                    continue
-                if attempt > self.max_retries:
-                    break
+
+        candidates = self._cluster_and_rank_candidates(candidates)
+        selected = candidates[0] if candidates else None
+        result = selected.result if selected is not None else empty_result(problem_id, model=self.model, backend=self.backend)
+        if selected is not None and self.enable_finalizer:
+            final_response = self._call_finalizer(problem_text, selected.result)
+            if final_response:
+                result["final_response"] = final_response
+        if selected is None:
+            result["_meta"]["overall_status"] = OverallStatus.ERROR.value
+            result["_meta"]["failure_kind"] = FailureKind.INCONCLUSIVE.value
+            result["_meta"]["failure_details"] = "no candidate could be generated"
+        log["candidates"] = [candidate.to_trace_dict() for candidate in candidates]
+        log["solver_result"] = result
+        log["verification"] = result.get("verification", {})
+        log["verification_evidence"] = selected.assessment.evidence_dicts() if selected is not None else []
+        log["plan"] = result.get("reasoning_plan", [])
+        log["route"] = {
+            "primary_domain": (result.get("domain_candidates") or [result.get("problem_type") or route_hint["primary_domain"]])[0],
+            "domain_candidates": result.get("domain_candidates") or route_hint["domain_candidates"],
+            "local_route_hint": route_hint,
+            "task_type": result.get("task_type", "unknown"),
+            "needs_tool_verification": self.enable_tool_verify,
+            "thinking_mode": self.thinking_mode,
+            "candidate_count": len(candidates),
+            "enable_critic": self.enable_critic,
+            "enable_finalizer": self.enable_finalizer,
+        }
 
         elapsed = time.time() - started
         result["_meta"]["elapsed_seconds"] = elapsed
@@ -147,8 +127,9 @@ class MathAgentOrchestrator:
         problem: Dict[str, Any],
         problem_text: str,
         repair_context: Optional[Dict[str, Any]] = None,
+        strategy: Optional[str] = None,
     ) -> str:
-        messages = build_solver_messages(problem, problem_text, repair_context=repair_context)
+        messages = build_solver_messages(problem, problem_text, repair_context=repair_context, strategy=strategy)
         try:
             return self.client.chat(
                 messages=messages,
@@ -161,6 +142,243 @@ class MathAgentOrchestrator:
                 messages=messages,
                 temperature=0.1,
                 max_tokens=8192,
+            )
+
+    def _select_strategies(
+        self,
+        problem: Dict[str, Any],
+        problem_text: str,
+        route_hint: Dict[str, Any],
+    ) -> list[str]:
+        primary_domain = route_hint.get("primary_domain") or "unknown"
+        pool = strategies_for_domain(str(primary_domain))
+        budget = choose_strategy_budget(str(problem.get("task_type") or "unknown"), self.max_candidates)
+        selected = pool[:budget]
+        if self.max_candidates > 2:
+            planner_selected = self._call_planner(problem, problem_text, pool)
+            for strategy in planner_selected:
+                if strategy in pool and strategy not in selected:
+                    selected.append(strategy)
+                if len(selected) >= budget:
+                    break
+        return selected[:budget] or ["direct_computation"]
+
+    def _call_planner(self, problem: Dict[str, Any], problem_text: str, strategies: list[str]) -> list[str]:
+        try:
+            messages = build_planner_messages(problem, problem_text, strategies)
+            raw = self._chat(messages, temperature=0.0, max_tokens=1024)
+            parsed = extract_json_from_text(raw)
+            selected = parsed.get("selected_strategies")
+            if isinstance(selected, list):
+                return [str(item) for item in selected]
+        except Exception:
+            return []
+        return []
+
+    def _solve_candidate(
+        self,
+        problem: Dict[str, Any],
+        problem_text: str,
+        problem_id: str,
+        route_hint: Dict[str, Any],
+        strategy: str,
+        candidate_index: int,
+        started: float,
+        log: Dict[str, Any],
+    ) -> CandidateSolution:
+        result: Dict[str, Any] = empty_result(problem_id, model=self.model, backend=self.backend)
+        assessment = SolveAssessment(
+            schema_valid=False,
+            content_complete=False,
+            answer_verified=False,
+            proof_verified=False,
+            overall_status=OverallStatus.ERROR.value,
+            failure_kind=FailureKind.JSON_PARSE.value,
+            failure_details="candidate not attempted",
+        )
+        repair_context: Dict[str, Any] | None = None
+        last_evidence: list[VerificationEvidence] = []
+        for attempt in range(1, self.max_retries + 2):
+            try:
+                raw_output = self._call_solver(problem, problem_text, repair_context=repair_context, strategy=strategy)
+                log["solver_raw_output"] = raw_output
+                parsed = extract_json_from_text(raw_output)
+                result, assessment, last_evidence, validation = self._normalize_validate_assess(
+                    parsed=parsed,
+                    problem_id=problem_id,
+                    route_hint=route_hint,
+                    attempt=attempt,
+                    started=started,
+                    problem_text=problem_text,
+                )
+                if self.enable_critic and assessment.overall_status in {OverallStatus.SOLVED.value, OverallStatus.PROBABLE.value}:
+                    critic = self._call_critic(problem_text, result, assessment.evidence_dicts())
+                    if critic:
+                        self._apply_critic(result, assessment, critic)
+                else:
+                    critic = None
+
+                if self._needs_repair(result, assessment) and attempt <= self.max_retries:
+                    repair_context = self._build_repair_context(result, assessment, validation)
+                    log["repair_history"].append(
+                        {
+                            "candidate": candidate_index,
+                            "strategy": strategy,
+                            "attempt": attempt + 1,
+                            "failure_kind": assessment.failure_kind,
+                            "previous_error": assessment.failure_details or validation.error or self._verification_error(result),
+                            "repair_strategy": "targeted retry with concrete validation evidence",
+                        }
+                    )
+                    continue
+                return self._make_candidate(candidate_index, strategy, result, assessment, last_evidence, critic)
+            except Exception as exc:
+                result = empty_result(problem_id, model=self.model, backend=self.backend)
+                result["_meta"]["attempts"] = attempt
+                result["_meta"]["schema_error"] = str(exc)
+                result["_meta"]["overall_status"] = OverallStatus.ERROR.value
+                result["_meta"]["failure_kind"] = FailureKind.JSON_PARSE.value
+                result["_meta"]["failure_details"] = str(exc)[:500]
+                assessment = SolveAssessment(
+                    schema_valid=False,
+                    content_complete=False,
+                    answer_verified=False,
+                    proof_verified=False,
+                    overall_status=OverallStatus.ERROR.value,
+                    failure_kind=FailureKind.JSON_PARSE.value,
+                    failure_details=str(exc)[:500],
+                )
+                log["errors"].append({"candidate": candidate_index, "strategy": strategy, "attempt": attempt, "error": str(exc)})
+                if attempt <= self.max_retries:
+                    repair_context = {
+                        "failure_kind": FailureKind.JSON_PARSE.value,
+                        "failure_details": str(exc)[:500],
+                        "instruction": "Return exactly one valid JSON object matching the schema. Do not change the math unless needed.",
+                    }
+                    continue
+                break
+        return self._make_candidate(candidate_index, strategy, result, assessment, last_evidence, None)
+
+    def _normalize_validate_assess(
+        self,
+        parsed: Dict[str, Any],
+        problem_id: str,
+        route_hint: Dict[str, Any],
+        attempt: int,
+        started: float,
+        problem_text: str,
+    ) -> tuple[Dict[str, Any], SolveAssessment, list[VerificationEvidence], ValidationResult]:
+        result = repair_json_locally(
+            parsed,
+            problem_id=problem_id,
+            model=self.model,
+            backend=self.backend,
+            attempts=attempt,
+            elapsed_seconds=time.time() - started,
+        )
+        if result.get("problem_type") in ("", "unknown") and route_hint["primary_domain"] != "unknown":
+            result["problem_type"] = route_hint["primary_domain"]
+        if result.get("domain_candidates") in ([], ["unknown"]) and route_hint["domain_candidates"] != ["unknown"]:
+            result["domain_candidates"] = route_hint["domain_candidates"]
+        if result.get("problem_type") in ("", "unknown") and result.get("domain_candidates"):
+            result["problem_type"] = str(result["domain_candidates"][0])
+
+        validation = validate_result(result, self.schema)
+        result["_meta"]["schema_valid"] = validation.valid
+        result["_meta"]["schema_error"] = validation.error
+        evidence = self._run_verifiers(problem_text, result) if self.enable_tool_verify else []
+        assessment = self._assess_result(result, validation, evidence)
+        self._apply_assessment(result, assessment)
+        final_validation = validate_result(result, self.schema)
+        result["_meta"]["schema_valid"] = final_validation.valid
+        result["_meta"]["schema_error"] = final_validation.error
+        if not final_validation.valid:
+            validation = final_validation
+            assessment = self._assess_result(result, final_validation, evidence)
+            self._apply_assessment(result, assessment)
+        return result, assessment, evidence, validation
+
+    def _call_critic(self, problem_text: str, result: Dict[str, Any], evidence: list[Dict[str, Any]]) -> Dict[str, Any] | None:
+        try:
+            messages = build_critic_messages(problem_text, result, evidence)
+            raw = self._chat(messages, temperature=0.0, max_tokens=1024)
+            parsed = extract_json_from_text(raw)
+            status = str(parsed.get("status") or "inconclusive")
+            if status not in {"pass", "fail", "inconclusive"}:
+                status = "inconclusive"
+            return {
+                "status": status,
+                "failure_kind": str(parsed.get("failure_kind") or ""),
+                "first_error": str(parsed.get("first_error") or "")[:500],
+                "missing_targets": parsed.get("missing_targets", []),
+                "suggested_repair": str(parsed.get("suggested_repair") or "")[:500],
+            }
+        except Exception:
+            return None
+
+    def _call_finalizer(self, problem_text: str, selected_candidate: Dict[str, Any]) -> str:
+        try:
+            messages = build_finalizer_messages(problem_text, selected_candidate)
+            raw = self._chat(messages, temperature=0.0, max_tokens=512)
+            parsed = extract_json_from_text(raw)
+            value = parsed.get("final_response")
+            if isinstance(value, str) and value.strip():
+                return normalize_final_response(value, problem=problem_text)
+        except Exception:
+            return ""
+        return ""
+
+    def _apply_critic(self, result: Dict[str, Any], assessment: SolveAssessment, critic: Dict[str, Any]) -> None:
+        if critic.get("status") != "fail":
+            return
+        assessment.overall_status = OverallStatus.INVALID.value
+        assessment.failure_kind = critic.get("failure_kind") or FailureKind.INCONCLUSIVE.value
+        assessment.failure_details = critic.get("first_error") or critic.get("suggested_repair") or "critic rejected candidate"
+        self._apply_assessment(result, assessment)
+
+    def _make_candidate(
+        self,
+        candidate_index: int,
+        strategy: str,
+        result: Dict[str, Any],
+        assessment: SolveAssessment,
+        evidence: list[VerificationEvidence],
+        critic: Dict[str, Any] | None,
+    ) -> CandidateSolution:
+        answer = ""
+        final_answer = result.get("final_answer") if isinstance(result, dict) else None
+        if isinstance(final_answer, dict):
+            answer = str(final_answer.get("answer") or "")
+        normalized = normalize_final_response(answer)
+        return CandidateSolution(
+            candidate_id=f"candidate_{candidate_index}",
+            strategy=strategy,
+            result=result,
+            assessment=assessment,
+            evidence=evidence,
+            critic=critic,
+            normalized_answer=normalized,
+            cluster_id=answer_cluster_key(normalized),
+        )
+
+    def _cluster_and_rank_candidates(self, candidates: list[CandidateSolution]) -> list[CandidateSolution]:
+        for candidate in candidates:
+            candidate.cluster_id = candidate.cluster_id or answer_cluster_key(candidate.normalized_answer)
+        return rank_candidates(candidates)
+
+    def _chat(self, messages: list[dict[str, str]], temperature: float, max_tokens: int) -> str:
+        try:
+            return self.client.chat(
+                messages=messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                thinking_mode=self.thinking_mode,
+            )
+        except TypeError:
+            return self.client.chat(
+                messages=messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
             )
 
     def _normalize_problem_input(self, problem: Any, metadata: Optional[Dict[str, Any]]) -> Dict[str, Any]:

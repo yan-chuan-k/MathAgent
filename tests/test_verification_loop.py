@@ -60,7 +60,7 @@ def test_sympy_failure_feeds_targeted_repair_and_accepts_fixed_answer():
     assert result["final_answer"]["answer"] == "2"
     assert result["_meta"]["overall_status"] == "solved"
     assert result["_meta"]["answer_verified"] is True
-    assert len(client.calls) == 2
+    assert len(client.calls) >= 2
     second_prompt = json.dumps(client.calls[1]["messages"], ensure_ascii=False)
     assert "numeric_residual" in second_prompt or "symbolic_contradiction" in second_prompt
     assert "residual" in second_prompt
@@ -99,3 +99,88 @@ def test_inconclusive_tool_status_is_not_solved():
 
     assert result["_meta"]["overall_status"] in {"probable", "uncertain"}
     assert result["_meta"]["answer_verified"] is False
+
+
+def test_multi_candidate_ranking_prefers_verified_solution():
+    client = ScriptedClient(
+        {
+            "solver": [
+                _response("unverified_text", confidence=0.9),
+                _response("2", confidence=0.95),
+            ],
+            "critic": [
+                {"status": "pass", "failure_kind": "", "first_error": "", "missing_targets": [], "suggested_repair": ""},
+            ],
+        }
+    )
+    orchestrator = MathAgentOrchestrator(
+        client=client,
+        max_retries=0,
+        enable_tool_verify=True,
+        enable_critic=True,
+        max_candidates=2,
+    )
+
+    result = orchestrator.solve("1+1=?", {"idx": 3})
+
+    assert result["final_answer"]["answer"] == "2"
+    assert orchestrator.last_log["route"]["candidate_count"] == 2
+    assert orchestrator.last_log["candidates"][0]["score"] >= orchestrator.last_log["candidates"][1]["score"]
+
+
+def test_critic_failure_rejects_first_candidate_and_uses_next_candidate():
+    client = ScriptedClient(
+        {
+            "solver": [
+                _response("2", confidence=0.95),
+                _response("2", confidence=0.95),
+            ],
+            "critic": [
+                {
+                    "status": "fail",
+                    "failure_kind": "missing_case",
+                    "first_error": "The answer omits a required case.",
+                    "missing_targets": ["case b"],
+                    "suggested_repair": "Cover the second case.",
+                },
+                {"status": "pass", "failure_kind": "", "first_error": "", "missing_targets": [], "suggested_repair": ""},
+            ],
+        }
+    )
+    orchestrator = MathAgentOrchestrator(
+        client=client,
+        max_retries=0,
+        enable_tool_verify=True,
+        enable_critic=True,
+        max_candidates=2,
+    )
+
+    result = orchestrator.solve("1+1=?", {"idx": 4})
+
+    assert result["_meta"]["overall_status"] == "solved"
+    assert orchestrator.last_log["candidates"][0]["critic_status"] == "pass"
+    assert any(candidate["critic_status"] == "fail" for candidate in orchestrator.last_log["candidates"])
+
+
+def test_finalizer_formats_selected_candidate_without_changing_verification():
+    client = ScriptedClient(
+        {
+            "solver": [_response("2", confidence=0.95)],
+            "critic": [{"status": "pass", "failure_kind": "", "first_error": "", "missing_targets": [], "suggested_repair": ""}],
+            "finalizer": [{"final_response": "2"}],
+        }
+    )
+    orchestrator = MathAgentOrchestrator(
+        client=client,
+        max_retries=0,
+        enable_tool_verify=True,
+        enable_critic=True,
+        enable_finalizer=True,
+        max_candidates=1,
+    )
+
+    result = orchestrator.solve("1+1=?", {"idx": 5})
+
+    assert result["final_response"] == "2"
+    assert result["_meta"]["overall_status"] == "solved"
+    assert result["_meta"]["answer_verified"] is True

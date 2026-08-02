@@ -63,14 +63,13 @@ def _paragraph(text: str) -> ET.Element:
 def main() -> None:
     path = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("math_agent_project_record.docx")
     paragraphs = [
-        "2026-08-02 Update: completed phase-1 correctness architecture upgrade for high-difficulty math solving.",
-        "Added system-owned solve status fields: schema_valid, content_complete, answer_verified, proof_verified, overall_status, failure_kind, and failure_details. Model-provided _meta is ignored.",
-        "Added VerificationEvidence and SolveAssessment in math_agent_core/state.py, plus safe whitelist SymPy verification in math_agent_core/tools/sympy_tool.py for arithmetic, equation substitution, symbolic equivalence, derivative checks, and integral checks.",
-        "Changed MathAgentOrchestrator retries from repeated identical prompts to targeted repair prompts carrying schema errors, residuals, previous answers, and concrete verifier evidence.",
-        "Hardened ReasoningAgent: unverified raw model output can no longer become final_response; only system-accepted solved candidates are returned, otherwise the conservative fallback is used with trace evidence.",
-        "Added ScriptedClient and FaultInjectionClient tests for invalid JSON, wrong-answer rejection, repair feedback, inconclusive tools, and model _meta forgery.",
-        "Hardened main.py resume behavior: shared local client, skip only successful non-empty outputs, and atomic JSON writes. Added Retry-After and jitter support in intern_s1_client.py without logging secrets.",
-        "Validation: import ok; python -m pytest -q => 29 passed, 1 skipped; python -m compileall -q .; mock baseline runner passed.",
+        "2026-08-02 Phase 2 Update: added strategy-aware multi-candidate search and separated model roles.",
+        "Added CandidateSolution, strategy pools, candidate ranker, and answer equivalence clustering in math_agent_core/candidate.py, math_agent_core/search/, and math_agent_core/evaluation/.",
+        "Split prompt builders into Planner, Solver, Critic, Reviser, and Finalizer roles while preserving the existing solver output schema.",
+        "MathAgentOrchestrator now generates candidates by strategy, validates each candidate with tools, optionally asks an independent Critic, clusters/ranks candidates, and selects the highest scoring verified answer.",
+        "Finalizer support is optional and only formats the system-selected candidate into final_response; official ReasoningAgent keeps it disabled by default to avoid extra API cost.",
+        "Extended ScriptedClient with role-aware response queues and added tests for candidate ranking, Critic rejection, and Finalizer formatting.",
+        "Validation: python -m pytest -q => 32 passed, 1 skipped; python -m compileall -q .; mock baseline runner passed.",
     ]
     backup = append_docx_paragraphs(path, paragraphs)
     print(f"updated {path}; backup {backup}")

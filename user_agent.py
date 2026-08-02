@@ -14,6 +14,7 @@ class ReasoningAgent:
         self.temperature = float(kwargs.get("temperature", 0.2))
         self.max_tokens = int(kwargs.get("max_tokens", 4096))
         self.thinking_mode = bool(kwargs.get("thinking_mode", True))
+        self.max_candidates = int(kwargs.get("max_candidates", 2))
         self.orchestrator = None
 
         try:
@@ -26,6 +27,9 @@ class ReasoningAgent:
                 enable_tool_verify=True,
                 backend="simple",
                 thinking_mode=self.thinking_mode,
+                max_candidates=self.max_candidates,
+                enable_critic=bool(kwargs.get("enable_critic", True)),
+                enable_finalizer=bool(kwargs.get("enable_finalizer", False)),
             )
         except Exception:
             self.orchestrator = None

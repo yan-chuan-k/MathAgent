@@ -101,6 +101,8 @@ Implementation notes:
 - `result_schema.json` and `math_agent_core/schema.py` distinguish schema validity from solve status with system-generated `_meta.overall_status`, `content_complete`, `answer_verified`, and `proof_verified` fields.
 - `math_agent_core/tools/sympy_tool.py` provides a safe whitelist SymPy verification layer for arithmetic, equation substitution, expression equivalence, derivative checks, and integral checks.
 - `math_agent_core/orchestrator.py` feeds concrete verification failures, residuals, and schema errors into targeted repair prompts instead of retrying the same solver prompt.
+- `math_agent_core/candidate.py`, `math_agent_core/search/`, and `math_agent_core/evaluation/` implement candidate snapshots, domain strategy pools, candidate ranking, and answer equivalence clustering.
+- `math_agent_core/prompts.py` now separates Solver, Planner, Critic, Reviser, and Finalizer prompt roles. The official path keeps a conservative default budget.
 - `user_agent.py` no longer recovers final answers from unverified raw model output. Only system-accepted solved candidates can become `final_response`; otherwise it returns the conservative fallback with trace evidence.
 - `main.py` reuses the local API client, skips only parseable successful outputs with non-empty `final_response`, and writes result files atomically for safer resume.
 
@@ -122,6 +124,16 @@ Branch: `main`
 Commit hash: use the final submitted commit SHA.
 
 ## Change Record
+
+### 2026-08-02 Phase 2
+
+- Added strategy-aware candidate search with `CandidateSolution`, domain strategy pools, ranker scoring, and answer equivalence clustering.
+- Split prompt roles into Planner, Solver, Critic, Reviser, and Finalizer builders while preserving the existing solver schema contract.
+- Updated `MathAgentOrchestrator` to generate candidates by strategy, run tool verification and optional Critic review per candidate, cluster/rank candidates, and select the highest scoring verified candidate.
+- Added optional Finalizer formatting that can only compress the system-selected candidate into `final_response`; official `ReasoningAgent` keeps it disabled by default to avoid extra API cost.
+- Extended `ScriptedClient` with role-aware response queues for offline multi-agent tests.
+- Added tests for multi-candidate ranking, Critic rejection, Finalizer formatting, and role-separated scripted responses.
+- Validation: `python -m pytest -q` -> 32 passed, 1 skipped; `python -m compileall -q .`; mock baseline runner passed.
 
 ### 2026-08-02
 
