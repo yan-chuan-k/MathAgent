@@ -33,6 +33,10 @@ def trace_from_orchestrator_result(result: Dict[str, Any], log: Dict[str, Any] |
         trace.append(make_trace_step("route", result.get("problem_type")))
     if log and log.get("settings"):
         trace.append(make_trace_step("settings", log.get("settings")))
+    if log and log.get("state"):
+        trace.append(make_trace_step("state", log.get("state")))
+    if log and log.get("candidates"):
+        trace.append(make_trace_step("candidates", log.get("candidates")))
     if result.get("reasoning_plan"):
         trace.append(make_trace_step("plan", result.get("reasoning_plan")))
     if result.get("verification"):

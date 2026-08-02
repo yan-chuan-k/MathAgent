@@ -69,3 +69,31 @@ class SolveAssessment:
 
     def evidence_dicts(self) -> List[Dict[str, Any]]:
         return [item.to_dict() for item in self.evidence]
+
+
+@dataclass
+class SolveState:
+    problem: str
+    route: Dict[str, Any]
+    open_goals: List[str] = field(default_factory=list)
+    candidates: List[Dict[str, Any]] = field(default_factory=list)
+    verified_lemmas: List[str] = field(default_factory=list)
+    rejected_attempts: List[Dict[str, Any]] = field(default_factory=list)
+    verification_evidence: List[Dict[str, Any]] = field(default_factory=list)
+    rejected_strategies: List[str] = field(default_factory=list)
+    current_strategy: str = ""
+    known_counterexamples: List[str] = field(default_factory=list)
+    budget: Dict[str, Any] = field(default_factory=dict)
+
+    def compact(self) -> Dict[str, Any]:
+        return {
+            "route": self.route,
+            "open_goals": self.open_goals[:8],
+            "verified_lemmas": self.verified_lemmas[:8],
+            "rejected_attempts": self.rejected_attempts[-5:],
+            "verification_evidence": self.verification_evidence[-8:],
+            "rejected_strategies": self.rejected_strategies[-8:],
+            "current_strategy": self.current_strategy,
+            "known_counterexamples": self.known_counterexamples[-5:],
+            "budget": self.budget,
+        }

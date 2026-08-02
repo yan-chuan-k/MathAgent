@@ -103,6 +103,8 @@ Implementation notes:
 - `math_agent_core/orchestrator.py` feeds concrete verification failures, residuals, and schema errors into targeted repair prompts instead of retrying the same solver prompt.
 - `math_agent_core/candidate.py`, `math_agent_core/search/`, and `math_agent_core/evaluation/` implement candidate snapshots, domain strategy pools, candidate ranking, and answer equivalence clustering.
 - `math_agent_core/prompts.py` now separates Solver, Planner, Critic, Reviser, and Finalizer prompt roles. The official path keeps a conservative default budget.
+- `math_agent_core/state.py` includes a compact `SolveState`; `math_agent_core/memory/lemma_store.py` tracks open and verified lemmas for future multi-round proof work.
+- `math_agent_core/verifiers/completeness.py` adds target coverage and proof-body completeness evidence for multi-part questions and proof tasks.
 - `user_agent.py` no longer recovers final answers from unverified raw model output. Only system-accepted solved candidates can become `final_response`; otherwise it returns the conservative fallback with trace evidence.
 - `main.py` reuses the local API client, skips only parseable successful outputs with non-empty `final_response`, and writes result files atomically for safer resume.
 
@@ -124,6 +126,15 @@ Branch: `main`
 Commit hash: use the final submitted commit SHA.
 
 ## Change Record
+
+### 2026-08-02 Phase 3
+
+- Added compact `SolveState` snapshots for open goals, rejected attempts, rejected strategies, verification evidence, and budget.
+- Added `LemmaStore` and `Lemma` data structures to track open/verified lemmas and candidate usage without retaining full conversations.
+- Added completeness verifier for answer target coverage and proof-body checks; missing multi-part targets now generate concrete `missing_case` evidence.
+- Integrated completeness evidence into candidate assessment and trace state, while ensuring completeness-only pass cannot mark an answer as mathematically verified.
+- Added tests for target extraction, missing target rejection, short proof rejection, LemmaStore, SolveState compacting, and orchestrator open-goal tracking.
+- Validation: `python -m pytest -q` -> 38 passed, 1 skipped; `python -m compileall -q .`; mock baseline runner passed.
 
 ### 2026-08-02 Phase 2
 

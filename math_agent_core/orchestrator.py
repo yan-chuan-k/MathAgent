@@ -13,8 +13,9 @@ from .prompts import build_critic_messages, build_finalizer_messages, build_plan
 from .router import classify_problem
 from .schema import empty_result
 from .search import choose_strategy_budget, rank_candidates, strategies_for_domain
-from .state import EvidenceStatus, FailureKind, OverallStatus, SolveAssessment, VerificationEvidence
+from .state import EvidenceStatus, FailureKind, OverallStatus, SolveAssessment, SolveState, VerificationEvidence
 from .tools import run_sympy_verification
+from .verifiers import check_completeness
 
 
 class MathAgentOrchestrator:
@@ -60,6 +61,7 @@ class MathAgentOrchestrator:
             "solver_raw_output": "",
             "solver_result": {},
             "candidates": [],
+            "state": {},
             "verification": {},
             "verification_evidence": [],
             "settings": {"thinking_mode": self.thinking_mode},
@@ -68,10 +70,17 @@ class MathAgentOrchestrator:
             "timing": {"start_time": started, "end_time": None, "elapsed_seconds": 0.0},
             "errors": [],
         }
+        solve_state = SolveState(
+            problem=problem_text,
+            route=route_hint,
+            open_goals=[],
+            budget={"max_candidates": self.max_candidates, "max_retries": self.max_retries},
+        )
 
         strategies = self._select_strategies(problem, problem_text, route_hint)
         candidates: list[CandidateSolution] = []
         for candidate_index, strategy in enumerate(strategies, start=1):
+            solve_state.current_strategy = strategy
             candidate = self._solve_candidate(
                 problem=problem,
                 problem_text=problem_text,
@@ -83,6 +92,7 @@ class MathAgentOrchestrator:
                 log=log,
             )
             candidates.append(candidate)
+            self._update_solve_state(solve_state, candidate)
             if candidate.assessment.overall_status == OverallStatus.SOLVED.value and candidate_index == 1:
                 break
 
@@ -98,6 +108,7 @@ class MathAgentOrchestrator:
             result["_meta"]["failure_kind"] = FailureKind.INCONCLUSIVE.value
             result["_meta"]["failure_details"] = "no candidate could be generated"
         log["candidates"] = [candidate.to_trace_dict() for candidate in candidates]
+        log["state"] = solve_state.compact()
         log["solver_result"] = result
         log["verification"] = result.get("verification", {})
         log["verification_evidence"] = selected.assessment.evidence_dicts() if selected is not None else []
@@ -422,10 +433,11 @@ class MathAgentOrchestrator:
         final_answer = result.get("final_answer")
         if isinstance(final_answer, dict):
             answer = str(final_answer.get("answer") or "")
+        evidence: list[VerificationEvidence] = []
         try:
-            return run_sympy_verification(problem_text=problem_text, answer=answer, result=result)
+            evidence.extend(run_sympy_verification(problem_text=problem_text, answer=answer, result=result))
         except Exception as exc:
-            return [
+            evidence.append(
                 VerificationEvidence(
                     verifier="safe_sympy",
                     claim_id="verifier_error",
@@ -433,7 +445,20 @@ class MathAgentOrchestrator:
                     method="exception_boundary",
                     details=f"{type(exc).__name__}: {str(exc)[:220]}",
                 )
-            ]
+            )
+        try:
+            evidence.extend(check_completeness(problem_text, result))
+        except Exception as exc:
+            evidence.append(
+                VerificationEvidence(
+                    verifier="completeness",
+                    claim_id="verifier_error",
+                    status=EvidenceStatus.INCONCLUSIVE.value,
+                    method="exception_boundary",
+                    details=f"{type(exc).__name__}: {str(exc)[:220]}",
+                )
+            )
+        return evidence
 
     def _assess_result(
         self,
@@ -478,6 +503,7 @@ class MathAgentOrchestrator:
         statuses = [item.status for item in evidence]
         failed = [item for item in evidence if item.status == EvidenceStatus.FAIL.value]
         passed = [item for item in evidence if item.status == EvidenceStatus.PASS.value]
+        verifier_passed = [item for item in passed if item.verifier != "completeness"]
         supported = [item for item in evidence if item.claim_id != "no_supported_check"]
         if failed:
             return SolveAssessment(
@@ -490,7 +516,7 @@ class MathAgentOrchestrator:
                 failure_details=self._evidence_summary(failed[0]),
                 evidence=evidence,
             )
-        if passed and supported:
+        if verifier_passed and supported:
             proof_verified = task_type == "proof" and model_pass
             return SolveAssessment(
                 schema_valid=True,
@@ -575,11 +601,24 @@ class MathAgentOrchestrator:
         }
 
     def _failure_kind_from_evidence(self, evidence: VerificationEvidence) -> str:
+        if evidence.verifier == "completeness":
+            return FailureKind.MISSING_CASE.value
         if evidence.method in {"equation_solution", "symbolic_equivalence", "derivative_check", "integral_check"}:
             return FailureKind.SYMBOLIC_CONTRADICTION.value
         if evidence.method == "numeric_arithmetic":
             return FailureKind.NUMERIC_RESIDUAL.value
         return FailureKind.WRONG_FINAL_ANSWER.value
+
+    def _update_solve_state(self, solve_state: SolveState, candidate: CandidateSolution) -> None:
+        solve_state.candidates.append(candidate.to_trace_dict())
+        solve_state.verification_evidence.extend(candidate.assessment.evidence_dicts())
+        meta = candidate.result.get("_meta", {}) if isinstance(candidate.result, dict) else {}
+        if meta.get("overall_status") in {OverallStatus.INVALID.value, OverallStatus.ERROR.value}:
+            solve_state.rejected_attempts.append(candidate.to_trace_dict())
+            solve_state.rejected_strategies.append(candidate.strategy)
+        for item in candidate.assessment.evidence:
+            if item.verifier == "completeness" and item.status == EvidenceStatus.FAIL.value and item.residual:
+                solve_state.open_goals.extend(goal.strip() for goal in item.residual.split(",") if goal.strip())
 
     def _evidence_summary(self, evidence: VerificationEvidence) -> str:
         residual = f"; residual={evidence.residual}" if evidence.residual is not None else ""

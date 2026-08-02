@@ -63,13 +63,13 @@ def _paragraph(text: str) -> ET.Element:
 def main() -> None:
     path = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("math_agent_project_record.docx")
     paragraphs = [
-        "2026-08-02 Phase 2 Update: added strategy-aware multi-candidate search and separated model roles.",
-        "Added CandidateSolution, strategy pools, candidate ranker, and answer equivalence clustering in math_agent_core/candidate.py, math_agent_core/search/, and math_agent_core/evaluation/.",
-        "Split prompt builders into Planner, Solver, Critic, Reviser, and Finalizer roles while preserving the existing solver output schema.",
-        "MathAgentOrchestrator now generates candidates by strategy, validates each candidate with tools, optionally asks an independent Critic, clusters/ranks candidates, and selects the highest scoring verified answer.",
-        "Finalizer support is optional and only formats the system-selected candidate into final_response; official ReasoningAgent keeps it disabled by default to avoid extra API cost.",
-        "Extended ScriptedClient with role-aware response queues and added tests for candidate ranking, Critic rejection, and Finalizer formatting.",
-        "Validation: python -m pytest -q => 32 passed, 1 skipped; python -m compileall -q .; mock baseline runner passed.",
+        "2026-08-02 Phase 3 Update: added compact proof/search state, LemmaStore, and answer completeness evidence.",
+        "Added SolveState compact snapshots for open goals, rejected attempts, rejected strategies, verification evidence, and budget without retaining full conversations.",
+        "Added Lemma and LemmaStore in math_agent_core/memory/lemma_store.py to track open and verified lemmas plus candidate usage.",
+        "Added math_agent_core/verifiers/completeness.py for answer-target coverage and proof-body checks. Missing multi-part targets now produce concrete missing_case evidence.",
+        "Integrated completeness evidence into MathAgentOrchestrator candidate assessment and trace state, while preventing completeness-only pass from marking an answer as mathematically verified.",
+        "Added tests for target extraction, missing target rejection, short proof rejection, LemmaStore, SolveState compacting, and orchestrator open-goal tracking.",
+        "Validation: python -m pytest -q => 38 passed, 1 skipped; python -m compileall -q .; mock baseline runner passed.",
     ]
     backup = append_docx_paragraphs(path, paragraphs)
     print(f"updated {path}; backup {backup}")
