@@ -106,6 +106,7 @@ Implementation notes:
 - `math_agent_core/state.py` includes a compact `SolveState`; `math_agent_core/memory/lemma_store.py` tracks open and verified lemmas for future multi-round proof work.
 - `math_agent_core/verifiers/completeness.py` adds target coverage and proof-body completeness evidence for multi-part questions and proof tasks.
 - `math_agent_core/acceptance.py` centralizes answer acceptance. Evidence now carries `verification_level` and `is_decisive`, so exact symbolic evidence, numeric evidence, model critic opinions, and completeness checks are not treated as equivalent.
+- `math_agent_core/tools/matrix_tool.py` and `math_agent_core/verifiers/linear_algebra.py` provide decisive exact checks for determinant, matrix products, inverses, linear-system residuals, ranks, eigenpairs, orthogonality, normalization, and matrix/vector equivalence.
 - `user_agent.py` no longer recovers final answers from unverified raw model output. Only system-accepted solved candidates can become `final_response`; otherwise it returns the conservative fallback with trace evidence.
 - `main.py` reuses the local API client, skips only parseable successful outputs with non-empty `final_response`, and writes result files atomically for safer resume.
 
@@ -127,6 +128,16 @@ Branch: `main`
 Commit hash: use the final submitted commit SHA.
 
 ## Change Record
+
+### 2026-08-02 Phase 4B Linear Algebra
+
+- Added `MathTool` base and `ToolRegistry` for whitelist tool execution.
+- Added `MatrixTool` with bounded exact SymPy checks for determinant, matrix multiplication, inverse verification, linear-system residuals, rank, eigenpair residuals, vector orthogonality, vector normalization, and matrix/vector equivalence.
+- Added `math_agent_core/verifiers/linear_algebra.py`, using only structured `requested_checks` instead of natural-language code execution.
+- Extended `requested_checks` schema and normalization to preserve nested matrix/vector arguments safely.
+- Integrated linear algebra evidence into orchestrator verification; decisive matrix failures reject candidates and decisive matrix passes can satisfy `AcceptancePolicy`.
+- Added tests for determinant pass, wrong eigenpair rejection, requested-check dispatch, and orchestrator acceptance with matrix evidence.
+- Validation: `python -m pytest -q` -> 47 passed, 1 skipped; `python -m compileall -q .`; mock baseline runner passed.
 
 ### 2026-08-02 Phase 4A
 

@@ -16,7 +16,7 @@ from .schema import empty_result
 from .search import choose_strategy_budget, rank_candidates, strategies_for_domain
 from .state import EvidenceStatus, FailureKind, OverallStatus, SolveAssessment, SolveState, VerificationEvidence, VerificationLevel
 from .tools import run_sympy_verification
-from .verifiers import check_completeness
+from .verifiers import check_completeness, run_linear_algebra_verification
 
 
 class MathAgentOrchestrator:
@@ -486,6 +486,22 @@ class MathAgentOrchestrator:
             evidence.append(
                 VerificationEvidence(
                     verifier="safe_sympy",
+                    claim_id="verifier_error",
+                    status=EvidenceStatus.INCONCLUSIVE.value,
+                    method="exception_boundary",
+                    details=f"{type(exc).__name__}: {str(exc)[:220]}",
+                    verification_level=VerificationLevel.EXACT_SYMBOLIC.value,
+                    is_decisive=False,
+                )
+            )
+        try:
+            linear_evidence = run_linear_algebra_verification(result)
+            if not (len(linear_evidence) == 1 and linear_evidence[0].claim_id == "no_matrix_check"):
+                evidence.extend(linear_evidence)
+        except Exception as exc:
+            evidence.append(
+                VerificationEvidence(
+                    verifier="linear_algebra",
                     claim_id="verifier_error",
                     status=EvidenceStatus.INCONCLUSIVE.value,
                     method="exception_boundary",

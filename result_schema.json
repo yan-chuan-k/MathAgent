@@ -184,11 +184,24 @@
               "equation_solution",
               "numeric_arithmetic",
               "derivative_check",
-              "integral_check"
+              "integral_check",
+              "matrix_determinant",
+              "matrix_multiply",
+              "matrix_inverse",
+              "linear_system_residual",
+              "matrix_rank",
+              "eigenpair_residual",
+              "vector_orthogonality",
+              "vector_normalization",
+              "matrix_equivalence",
+              "vector_equivalence"
             ]
           },
           "arguments": {
             "type": "object"
+          },
+          "claim_id": {
+            "type": "string"
           }
         }
       }

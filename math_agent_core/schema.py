@@ -246,6 +246,16 @@ def _normalize_requested_check(item: Any) -> Dict[str, Any]:
         "numeric_arithmetic",
         "derivative_check",
         "integral_check",
+        "matrix_determinant",
+        "matrix_multiply",
+        "matrix_inverse",
+        "linear_system_residual",
+        "matrix_rank",
+        "eigenpair_residual",
+        "vector_orthogonality",
+        "vector_normalization",
+        "matrix_equivalence",
+        "vector_equivalence",
     }
     if not isinstance(item, dict):
         return {"tool": "numeric_arithmetic", "arguments": {}}
@@ -255,5 +265,18 @@ def _normalize_requested_check(item: Any) -> Dict[str, Any]:
     arguments = item.get("arguments")
     if not isinstance(arguments, dict):
         arguments = {}
-    safe_arguments = {str(key)[:80]: str(value)[:240] for key, value in arguments.items()}
-    return {"tool": tool, "arguments": safe_arguments}
+    safe_arguments = {str(key)[:80]: _safe_argument_value(value) for key, value in list(arguments.items())[:20]}
+    normalized = {"tool": tool, "arguments": safe_arguments}
+    if item.get("claim_id"):
+        normalized["claim_id"] = str(item.get("claim_id"))[:80]
+    return normalized
+
+
+def _safe_argument_value(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {str(key)[:80]: _safe_argument_value(item) for key, item in list(value.items())[:20]}
+    if isinstance(value, list):
+        return [_safe_argument_value(item) for item in value[:50]]
+    if isinstance(value, (int, float, bool)) or value is None:
+        return value
+    return str(value)[:240]

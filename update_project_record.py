@@ -63,13 +63,13 @@ def _paragraph(text: str) -> ET.Element:
 def main() -> None:
     path = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("math_agent_project_record.docx")
     paragraphs = [
-        "2026-08-02 Phase 4A Update: added verification trust levels and centralized AcceptancePolicy.",
-        "Extended VerificationEvidence with verification_level and is_decisive. Added VerificationLevel values for formal, exact_symbolic, exact_enumeration, high_precision_numeric, randomized_sanity, model_critic, and completeness_only.",
-        "Added math_agent_core/acceptance.py. AcceptancePolicy now owns solved/probable/uncertain/invalid decisions instead of model self-confidence or aggregate score.",
-        "Marked SymPy exact checks as decisive exact_symbolic evidence; completeness checks as completeness_only; Critic reviews as non-decisive model_critic.",
-        "Enforced evidence priority: decisive tool failures reject candidates even if Critic passes; Critic-only and completeness-only support cannot produce solved; high-precision numeric support is capped at probable.",
-        "Added tests for exact symbolic acceptance, decisive tool failure over model pass, numeric-only probable status, completeness-only uncertainty, and model-critic-only probable status.",
-        "Validation: python -m pytest -q => 43 passed, 1 skipped; python -m compileall -q .; mock baseline runner passed.",
+        "2026-08-02 Phase 4B Linear Algebra Update: added matrix tool verification and whitelist registry.",
+        "Added MathTool base and ToolRegistry for controlled whitelist tool execution.",
+        "Added MatrixTool with bounded exact checks for determinants, matrix products, inverses, linear-system residuals, ranks, eigenpair residuals, orthogonality, normalization, and matrix/vector equivalence.",
+        "Added math_agent_core/verifiers/linear_algebra.py. It consumes only structured requested_checks and never executes model-generated Python code.",
+        "Extended requested_checks schema and normalization to preserve nested matrix/vector arguments safely.",
+        "Integrated linear algebra evidence into MathAgentOrchestrator. Decisive matrix failures reject candidates; decisive matrix passes can satisfy AcceptancePolicy.",
+        "Validation: python -m pytest -q => 47 passed, 1 skipped; python -m compileall -q .; mock baseline runner passed.",
     ]
     backup = append_docx_paragraphs(path, paragraphs)
     print(f"updated {path}; backup {backup}")
