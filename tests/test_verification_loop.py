@@ -128,7 +128,7 @@ def test_multi_candidate_ranking_prefers_verified_solution():
     assert orchestrator.last_log["candidates"][0]["score"] >= orchestrator.last_log["candidates"][1]["score"]
 
 
-def test_critic_failure_rejects_first_candidate_and_uses_next_candidate():
+def test_decisive_tool_pass_is_not_overridden_by_critic_failure():
     client = ScriptedClient(
         {
             "solver": [
@@ -158,8 +158,10 @@ def test_critic_failure_rejects_first_candidate_and_uses_next_candidate():
     result = orchestrator.solve("1+1=?", {"idx": 4})
 
     assert result["_meta"]["overall_status"] == "solved"
-    assert orchestrator.last_log["candidates"][0]["critic_status"] == "pass"
-    assert any(candidate["critic_status"] == "fail" for candidate in orchestrator.last_log["candidates"])
+    assert orchestrator.last_log["candidates"][0]["critic_status"] == "fail"
+    evidence = result["verification"]["evidence"]
+    assert any(item["verification_level"] == "exact_symbolic" and item["is_decisive"] for item in evidence)
+    assert any(item["verification_level"] == "model_critic" and item["status"] == "fail" for item in evidence)
 
 
 def test_finalizer_formats_selected_candidate_without_changing_verification():

@@ -98,7 +98,17 @@
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["verifier", "claim_id", "status", "method", "details", "residual", "assumptions"],
+            "required": [
+              "verifier",
+              "claim_id",
+              "status",
+              "method",
+              "details",
+              "residual",
+              "assumptions",
+              "verification_level",
+              "is_decisive"
+            ],
             "properties": {
               "verifier": {
                 "type": "string"
@@ -124,6 +134,21 @@
                 "items": {
                   "type": "string"
                 }
+              },
+              "verification_level": {
+                "type": "string",
+                "enum": [
+                  "formal",
+                  "exact_symbolic",
+                  "exact_enumeration",
+                  "high_precision_numeric",
+                  "randomized_sanity",
+                  "model_critic",
+                  "completeness_only"
+                ]
+              },
+              "is_decisive": {
+                "type": "boolean"
               }
             }
           }

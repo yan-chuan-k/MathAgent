@@ -220,7 +220,23 @@ def _normalize_evidence_item(item: Any) -> Dict[str, Any]:
         "details": str(item.get("details") or "")[:500],
         "residual": None if item.get("residual") is None else str(item.get("residual"))[:300],
         "assumptions": [str(value)[:200] for value in assumptions[:5]],
+        "verification_level": _normalize_verification_level(item.get("verification_level")),
+        "is_decisive": bool(item.get("is_decisive", False)),
     }
+
+
+def _normalize_verification_level(value: Any) -> str:
+    allowed = {
+        "formal",
+        "exact_symbolic",
+        "exact_enumeration",
+        "high_precision_numeric",
+        "randomized_sanity",
+        "model_critic",
+        "completeness_only",
+    }
+    text = str(value or "model_critic")
+    return text if text in allowed else "model_critic"
 
 
 def _normalize_requested_check(item: Any) -> Dict[str, Any]:

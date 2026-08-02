@@ -105,6 +105,7 @@ Implementation notes:
 - `math_agent_core/prompts.py` now separates Solver, Planner, Critic, Reviser, and Finalizer prompt roles. The official path keeps a conservative default budget.
 - `math_agent_core/state.py` includes a compact `SolveState`; `math_agent_core/memory/lemma_store.py` tracks open and verified lemmas for future multi-round proof work.
 - `math_agent_core/verifiers/completeness.py` adds target coverage and proof-body completeness evidence for multi-part questions and proof tasks.
+- `math_agent_core/acceptance.py` centralizes answer acceptance. Evidence now carries `verification_level` and `is_decisive`, so exact symbolic evidence, numeric evidence, model critic opinions, and completeness checks are not treated as equivalent.
 - `user_agent.py` no longer recovers final answers from unverified raw model output. Only system-accepted solved candidates can become `final_response`; otherwise it returns the conservative fallback with trace evidence.
 - `main.py` reuses the local API client, skips only parseable successful outputs with non-empty `final_response`, and writes result files atomically for safer resume.
 
@@ -126,6 +127,15 @@ Branch: `main`
 Commit hash: use the final submitted commit SHA.
 
 ## Change Record
+
+### 2026-08-02 Phase 4A
+
+- Added `VerificationLevel` and extended `VerificationEvidence` with `verification_level` and `is_decisive`.
+- Added `math_agent_core/acceptance.py` with `AcceptancePolicy`, making `solved/probable/uncertain/invalid` decisions independent of model self-confidence.
+- Marked SymPy exact checks as decisive `exact_symbolic` evidence; completeness checks as `completeness_only`; Critic reviews as non-decisive `model_critic`.
+- Enforced evidence priority: decisive tool failures reject candidates even if Critic passes; Critic-only and completeness-only support cannot produce `solved`; high-precision numeric support is capped at `probable`.
+- Added tests for exact symbolic acceptance, decisive tool failure over model pass, numeric-only probable status, completeness-only uncertainty, and model-critic-only probable status.
+- Validation: `python -m pytest -q` -> 43 passed, 1 skipped; `python -m compileall -q .`; mock baseline runner passed.
 
 ### 2026-08-02 Phase 3
 

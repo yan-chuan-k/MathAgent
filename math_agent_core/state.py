@@ -19,6 +19,16 @@ class EvidenceStatus(str, Enum):
     INCONCLUSIVE = "inconclusive"
 
 
+class VerificationLevel(str, Enum):
+    FORMAL = "formal"
+    EXACT_SYMBOLIC = "exact_symbolic"
+    EXACT_ENUMERATION = "exact_enumeration"
+    HIGH_PRECISION_NUMERIC = "high_precision_numeric"
+    RANDOMIZED_SANITY = "randomized_sanity"
+    MODEL_CRITIC = "model_critic"
+    COMPLETENESS_ONLY = "completeness_only"
+
+
 class FailureKind(str, Enum):
     JSON_PARSE = "json_parse"
     SCHEMA = "schema"
@@ -41,6 +51,8 @@ class VerificationEvidence:
     details: str
     residual: Optional[str] = None
     assumptions: List[str] = field(default_factory=list)
+    verification_level: str = VerificationLevel.MODEL_CRITIC.value
+    is_decisive: bool = False
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)

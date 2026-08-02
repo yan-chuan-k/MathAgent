@@ -5,6 +5,7 @@ import time
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+from .acceptance import AcceptancePolicy
 from .answer_utils import normalize_final_response
 from .candidate import CandidateSolution
 from .evaluation import answer_cluster_key
@@ -13,7 +14,7 @@ from .prompts import build_critic_messages, build_finalizer_messages, build_plan
 from .router import classify_problem
 from .schema import empty_result
 from .search import choose_strategy_budget, rank_candidates, strategies_for_domain
-from .state import EvidenceStatus, FailureKind, OverallStatus, SolveAssessment, SolveState, VerificationEvidence
+from .state import EvidenceStatus, FailureKind, OverallStatus, SolveAssessment, SolveState, VerificationEvidence, VerificationLevel
 from .tools import run_sympy_verification
 from .verifiers import check_completeness
 
@@ -43,6 +44,7 @@ class MathAgentOrchestrator:
         self.backend = self._resolve_backend(backend)
         self.model = getattr(client, "model", "intern-s2-preview-397b")
         self.schema = self._load_schema(schema_path)
+        self.acceptance_policy = AcceptancePolicy()
         self.last_log: Dict[str, Any] = {}
 
     def solve(self, problem: Any, metadata: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
@@ -226,6 +228,7 @@ class MathAgentOrchestrator:
                     critic = self._call_critic(problem_text, result, assessment.evidence_dicts())
                     if critic:
                         self._apply_critic(result, assessment, critic)
+                        assessment = self._reassess_with_current_evidence(result, validation)
                 else:
                     critic = None
 
@@ -340,12 +343,55 @@ class MathAgentOrchestrator:
         return ""
 
     def _apply_critic(self, result: Dict[str, Any], assessment: SolveAssessment, critic: Dict[str, Any]) -> None:
-        if critic.get("status") != "fail":
-            return
-        assessment.overall_status = OverallStatus.INVALID.value
-        assessment.failure_kind = critic.get("failure_kind") or FailureKind.INCONCLUSIVE.value
-        assessment.failure_details = critic.get("first_error") or critic.get("suggested_repair") or "critic rejected candidate"
+        assessment.evidence.append(self._critic_to_evidence(critic))
         self._apply_assessment(result, assessment)
+
+    def _critic_to_evidence(self, critic: Dict[str, Any]) -> VerificationEvidence:
+        status = str(critic.get("status") or EvidenceStatus.INCONCLUSIVE.value)
+        if status not in {EvidenceStatus.PASS.value, EvidenceStatus.FAIL.value, EvidenceStatus.INCONCLUSIVE.value}:
+            status = EvidenceStatus.INCONCLUSIVE.value
+        details = critic.get("first_error") or critic.get("suggested_repair") or "critic review"
+        return VerificationEvidence(
+            verifier="critic",
+            claim_id="critic_review",
+            status=status,
+            method="model_critic",
+            details=str(details)[:500],
+            residual=None,
+            assumptions=[],
+            verification_level=VerificationLevel.MODEL_CRITIC.value,
+            is_decisive=False,
+        )
+
+    def _reassess_with_current_evidence(self, result: Dict[str, Any], validation: ValidationResult) -> SolveAssessment:
+        verification = result.get("verification") if isinstance(result.get("verification"), dict) else {}
+        evidence: list[VerificationEvidence] = []
+        raw_evidence = verification.get("evidence", [])
+        if isinstance(raw_evidence, list):
+            for item in raw_evidence:
+                if not isinstance(item, dict):
+                    continue
+                assumptions = item.get("assumptions", [])
+                if isinstance(assumptions, str):
+                    assumptions = [assumptions]
+                if not isinstance(assumptions, list):
+                    assumptions = []
+                evidence.append(
+                    VerificationEvidence(
+                        verifier=str(item.get("verifier") or "unknown"),
+                        claim_id=str(item.get("claim_id") or "claim"),
+                        status=str(item.get("status") or EvidenceStatus.INCONCLUSIVE.value),
+                        method=str(item.get("method") or "unknown"),
+                        details=str(item.get("details") or ""),
+                        residual=None if item.get("residual") is None else str(item.get("residual")),
+                        assumptions=[str(value) for value in assumptions],
+                        verification_level=str(item.get("verification_level") or VerificationLevel.MODEL_CRITIC.value),
+                        is_decisive=bool(item.get("is_decisive", False)),
+                    )
+                )
+        assessment = self._assess_result(result, validation, evidence)
+        self._apply_assessment(result, assessment)
+        return assessment
 
     def _make_candidate(
         self,
@@ -444,6 +490,8 @@ class MathAgentOrchestrator:
                     status=EvidenceStatus.INCONCLUSIVE.value,
                     method="exception_boundary",
                     details=f"{type(exc).__name__}: {str(exc)[:220]}",
+                    verification_level=VerificationLevel.EXACT_SYMBOLIC.value,
+                    is_decisive=False,
                 )
             )
         try:
@@ -456,6 +504,8 @@ class MathAgentOrchestrator:
                     status=EvidenceStatus.INCONCLUSIVE.value,
                     method="exception_boundary",
                     details=f"{type(exc).__name__}: {str(exc)[:220]}",
+                    verification_level=VerificationLevel.COMPLETENESS_ONLY.value,
+                    is_decisive=False,
                 )
             )
         return evidence
@@ -476,75 +526,27 @@ class MathAgentOrchestrator:
         content_complete = bool(answer) and (has_solution or task_type != "proof")
         model_verification = result.get("verification", {}) if isinstance(result.get("verification"), dict) else {}
         model_pass = model_verification.get("verification_result") == "pass"
-
-        if not validation.valid:
-            return SolveAssessment(
-                schema_valid=False,
-                content_complete=content_complete,
-                answer_verified=False,
-                proof_verified=False,
-                overall_status=OverallStatus.INVALID.value,
-                failure_kind=FailureKind.SCHEMA.value,
-                failure_details=validation.error or "schema validation failed",
-                evidence=evidence,
-            )
-        if not content_complete:
-            return SolveAssessment(
-                schema_valid=True,
-                content_complete=False,
-                answer_verified=False,
-                proof_verified=False,
-                overall_status=OverallStatus.INVALID.value,
-                failure_kind=FailureKind.WRONG_FINAL_ANSWER.value,
-                failure_details="final answer or solution is empty",
-                evidence=evidence,
-            )
-
-        statuses = [item.status for item in evidence]
-        failed = [item for item in evidence if item.status == EvidenceStatus.FAIL.value]
-        passed = [item for item in evidence if item.status == EvidenceStatus.PASS.value]
-        verifier_passed = [item for item in passed if item.verifier != "completeness"]
-        supported = [item for item in evidence if item.claim_id != "no_supported_check"]
-        if failed:
-            return SolveAssessment(
-                schema_valid=True,
-                content_complete=True,
-                answer_verified=False,
-                proof_verified=False,
-                overall_status=OverallStatus.INVALID.value,
-                failure_kind=self._failure_kind_from_evidence(failed[0]),
-                failure_details=self._evidence_summary(failed[0]),
-                evidence=evidence,
-            )
-        if verifier_passed and supported:
-            proof_verified = task_type == "proof" and model_pass
-            return SolveAssessment(
-                schema_valid=True,
-                content_complete=True,
-                answer_verified=True,
-                proof_verified=proof_verified,
-                overall_status=OverallStatus.SOLVED.value,
-                evidence=evidence,
-            )
-        if model_pass:
-            return SolveAssessment(
-                schema_valid=True,
-                content_complete=True,
-                answer_verified=False,
-                proof_verified=task_type == "proof",
-                overall_status=OverallStatus.PROBABLE.value,
-                failure_kind=FailureKind.INCONCLUSIVE.value,
-                failure_details="no conclusive tool evidence; relying on structured model verification only",
-                evidence=evidence,
-            )
+        answer_type = "unknown"
+        final_answer_payload = result.get("final_answer") if isinstance(result.get("final_answer"), dict) else {}
+        if isinstance(final_answer_payload, dict):
+            answer_type = str(final_answer_payload.get("answer_type") or "unknown")
+        decision = self.acceptance_policy.decide(
+            schema_valid=validation.valid,
+            content_complete=content_complete,
+            task_type=task_type,
+            answer_type=answer_type,
+            model_verification_pass=model_pass,
+            evidence=evidence,
+            schema_error=validation.error,
+        )
         return SolveAssessment(
-            schema_valid=True,
-            content_complete=True,
-            answer_verified=False,
-            proof_verified=False,
-            overall_status=OverallStatus.UNCERTAIN.value,
-            failure_kind=FailureKind.INCONCLUSIVE.value,
-            failure_details="verification did not pass and no conclusive tool evidence is available",
+            schema_valid=validation.valid,
+            content_complete=content_complete,
+            answer_verified=decision.answer_verified,
+            proof_verified=decision.proof_verified,
+            overall_status=decision.overall_status,
+            failure_kind=decision.failure_kind,
+            failure_details=decision.failure_details,
             evidence=evidence,
         )
 

@@ -5,7 +5,7 @@ from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from fractions import Fraction
 from typing import Any, Dict, List, Optional
 
-from math_agent_core.state import EvidenceStatus, VerificationEvidence
+from math_agent_core.state import EvidenceStatus, VerificationEvidence, VerificationLevel
 
 
 MAX_EXPR_LENGTH = 240
@@ -27,6 +27,8 @@ class SafeSympyTool:
                     status=EvidenceStatus.INCONCLUSIVE.value,
                     method="dependency_check",
                     details="SymPy is not available.",
+                    verification_level=VerificationLevel.EXACT_SYMBOLIC.value,
+                    is_decisive=False,
                 )
             ]
 
@@ -41,6 +43,8 @@ class SafeSympyTool:
                     status=EvidenceStatus.INCONCLUSIVE.value,
                     method="heuristic_dispatch",
                     details="No safe symbolic or numeric check matched this problem and answer.",
+                    verification_level=VerificationLevel.EXACT_SYMBOLIC.value,
+                    is_decisive=False,
                 )
             ]
 
@@ -65,6 +69,8 @@ class SafeSympyTool:
                 status=EvidenceStatus.INCONCLUSIVE.value,
                 method=tool_name or "unknown_tool",
                 details="Unsupported tool requested.",
+                verification_level=VerificationLevel.EXACT_SYMBOLIC.value,
+                is_decisive=False,
             )
 
         try:
@@ -76,6 +82,8 @@ class SafeSympyTool:
                 status=EvidenceStatus.INCONCLUSIVE.value,
                 method=tool_name,
                 details="SymPy check timed out within the configured budget.",
+                verification_level=VerificationLevel.EXACT_SYMBOLIC.value,
+                is_decisive=False,
             )
         except Exception as exc:
             return VerificationEvidence(
@@ -84,6 +92,8 @@ class SafeSympyTool:
                 status=EvidenceStatus.INCONCLUSIVE.value,
                 method=tool_name,
                 details=f"{type(exc).__name__}: {str(exc)[:220]}",
+                verification_level=VerificationLevel.EXACT_SYMBOLIC.value,
+                is_decisive=False,
             )
 
     def _run_check_now(self, tool_name: str, arguments: Dict[str, Any], claim_id: str) -> VerificationEvidence:
@@ -156,6 +166,8 @@ class SafeSympyTool:
             method="symbolic_equivalence",
             details="Compared simplified difference of both expressions.",
             residual=str(residual),
+            verification_level=VerificationLevel.EXACT_SYMBOLIC.value,
+            is_decisive=True,
         )
 
     def _equation_solution(self, arguments: Dict[str, Any], claim_id: str) -> VerificationEvidence:
@@ -173,6 +185,8 @@ class SafeSympyTool:
             method="equation_solution",
             details=f"Substituted {variable_name}={value} into the candidate equation.",
             residual=str(residual),
+            verification_level=VerificationLevel.EXACT_SYMBOLIC.value,
+            is_decisive=True,
         )
 
     def _numeric_arithmetic(self, arguments: Dict[str, Any], claim_id: str) -> VerificationEvidence:
@@ -187,6 +201,8 @@ class SafeSympyTool:
             method="numeric_arithmetic",
             details="Recomputed the arithmetic expression exactly.",
             residual=str(residual),
+            verification_level=VerificationLevel.EXACT_SYMBOLIC.value,
+            is_decisive=True,
         )
 
     def _derivative_check(self, arguments: Dict[str, Any], claim_id: str) -> VerificationEvidence:
@@ -205,6 +221,8 @@ class SafeSympyTool:
             method="derivative_check",
             details=f"Differentiated with respect to {variable_name} and compared the result.",
             residual=str(residual),
+            verification_level=VerificationLevel.EXACT_SYMBOLIC.value,
+            is_decisive=True,
         )
 
     def _integral_check(self, arguments: Dict[str, Any], claim_id: str) -> VerificationEvidence:
@@ -223,6 +241,8 @@ class SafeSympyTool:
             method="integral_check",
             details=f"Differentiated the proposed antiderivative with respect to {variable_name}.",
             residual=str(residual),
+            verification_level=VerificationLevel.EXACT_SYMBOLIC.value,
+            is_decisive=True,
         )
 
 

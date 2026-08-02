@@ -63,13 +63,13 @@ def _paragraph(text: str) -> ET.Element:
 def main() -> None:
     path = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("math_agent_project_record.docx")
     paragraphs = [
-        "2026-08-02 Phase 3 Update: added compact proof/search state, LemmaStore, and answer completeness evidence.",
-        "Added SolveState compact snapshots for open goals, rejected attempts, rejected strategies, verification evidence, and budget without retaining full conversations.",
-        "Added Lemma and LemmaStore in math_agent_core/memory/lemma_store.py to track open and verified lemmas plus candidate usage.",
-        "Added math_agent_core/verifiers/completeness.py for answer-target coverage and proof-body checks. Missing multi-part targets now produce concrete missing_case evidence.",
-        "Integrated completeness evidence into MathAgentOrchestrator candidate assessment and trace state, while preventing completeness-only pass from marking an answer as mathematically verified.",
-        "Added tests for target extraction, missing target rejection, short proof rejection, LemmaStore, SolveState compacting, and orchestrator open-goal tracking.",
-        "Validation: python -m pytest -q => 38 passed, 1 skipped; python -m compileall -q .; mock baseline runner passed.",
+        "2026-08-02 Phase 4A Update: added verification trust levels and centralized AcceptancePolicy.",
+        "Extended VerificationEvidence with verification_level and is_decisive. Added VerificationLevel values for formal, exact_symbolic, exact_enumeration, high_precision_numeric, randomized_sanity, model_critic, and completeness_only.",
+        "Added math_agent_core/acceptance.py. AcceptancePolicy now owns solved/probable/uncertain/invalid decisions instead of model self-confidence or aggregate score.",
+        "Marked SymPy exact checks as decisive exact_symbolic evidence; completeness checks as completeness_only; Critic reviews as non-decisive model_critic.",
+        "Enforced evidence priority: decisive tool failures reject candidates even if Critic passes; Critic-only and completeness-only support cannot produce solved; high-precision numeric support is capped at probable.",
+        "Added tests for exact symbolic acceptance, decisive tool failure over model pass, numeric-only probable status, completeness-only uncertainty, and model-critic-only probable status.",
+        "Validation: python -m pytest -q => 43 passed, 1 skipped; python -m compileall -q .; mock baseline runner passed.",
     ]
     backup = append_docx_paragraphs(path, paragraphs)
     print(f"updated {path}; backup {backup}")

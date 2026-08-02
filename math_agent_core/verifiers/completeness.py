@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from typing import Any, Dict, List
 
-from math_agent_core.state import EvidenceStatus, VerificationEvidence
+from math_agent_core.state import EvidenceStatus, VerificationEvidence, VerificationLevel
 
 
 def check_completeness(problem_text: str, result: Dict[str, Any]) -> List[VerificationEvidence]:
@@ -22,6 +22,8 @@ def check_completeness(problem_text: str, result: Dict[str, Any]) -> List[Verifi
                 method="target_coverage",
                 details=f"covered={covered}; missing={missing}",
                 residual=", ".join(missing) if missing else None,
+                verification_level=VerificationLevel.COMPLETENESS_ONLY.value,
+                is_decisive=bool(missing),
             )
         )
     else:
@@ -32,6 +34,8 @@ def check_completeness(problem_text: str, result: Dict[str, Any]) -> List[Verifi
                 status=EvidenceStatus.INCONCLUSIVE.value,
                 method="target_extraction",
                 details="No explicit answer targets were extracted.",
+                verification_level=VerificationLevel.COMPLETENESS_ONLY.value,
+                is_decisive=False,
             )
         )
 
@@ -131,6 +135,8 @@ def _proof_completeness(problem_text: str, answer: str, result: Dict[str, Any]) 
             status=EvidenceStatus.FAIL.value,
             method="proof_length_and_markers",
             details="Proof task answer is empty or only states a conclusion.",
+            verification_level=VerificationLevel.COMPLETENESS_ONLY.value,
+            is_decisive=True,
         )
     if len(stripped) < 80 and not any(marker in lowered for marker in ("because", "therefore", "hence", "since", "proof", "因", "故", "所以")):
         return VerificationEvidence(
@@ -139,6 +145,8 @@ def _proof_completeness(problem_text: str, answer: str, result: Dict[str, Any]) 
             status=EvidenceStatus.FAIL.value,
             method="proof_length_and_markers",
             details="Proof task answer is too short to establish the requested claim.",
+            verification_level=VerificationLevel.COMPLETENESS_ONLY.value,
+            is_decisive=True,
         )
     solution = result.get("solution") if isinstance(result, dict) else []
     if isinstance(solution, list) and len(solution) >= 1:
@@ -148,6 +156,8 @@ def _proof_completeness(problem_text: str, answer: str, result: Dict[str, Any]) 
             status=EvidenceStatus.PASS.value,
             method="proof_structure",
             details="Proof answer includes a body and structured solution steps.",
+            verification_level=VerificationLevel.COMPLETENESS_ONLY.value,
+            is_decisive=False,
         )
     return VerificationEvidence(
         verifier="completeness",
@@ -155,6 +165,8 @@ def _proof_completeness(problem_text: str, answer: str, result: Dict[str, Any]) 
         status=EvidenceStatus.INCONCLUSIVE.value,
         method="proof_structure",
         details="Could not confirm proof structure from the candidate.",
+        verification_level=VerificationLevel.COMPLETENESS_ONLY.value,
+        is_decisive=False,
     )
 
 
