@@ -1,5 +1,6 @@
 import json
 import os
+import random
 import time
 from typing import Any, Dict, Optional
 
@@ -73,8 +74,31 @@ class InternS1Client:
                 last_error = exc
                 if attempt >= self.retry:
                     break
-                time.sleep(min(2 ** (attempt - 1), 8))
+                time.sleep(self._retry_delay(exc, attempt))
         raise RuntimeError(f"Intern-S1 request failed after {self.retry} attempts: {last_error}")
+
+    def _retry_delay(self, exc: Exception, attempt: int) -> float:
+        retry_after = self._extract_retry_after(exc)
+        if retry_after is not None:
+            return min(max(retry_after, 0.0), 30.0)
+        base = min(2 ** (attempt - 1), 8)
+        return base + random.uniform(0.0, 0.5)
+
+    def _extract_retry_after(self, exc: Exception) -> Optional[float]:
+        response = getattr(exc, "response", None)
+        headers = getattr(response, "headers", None)
+        if headers is None:
+            headers = getattr(exc, "headers", None)
+        if not headers:
+            return None
+        try:
+            value = headers.get("retry-after") or headers.get("Retry-After")
+        except Exception:
+            return None
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
 
     def solve_math_problem(self, problem_text: str) -> str:
         messages = [

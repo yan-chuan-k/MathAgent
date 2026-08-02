@@ -63,12 +63,14 @@ def _paragraph(text: str) -> ET.Element:
 def main() -> None:
     path = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("math_agent_project_record.docx")
     paragraphs = [
-        "2026-08-01 更新记录：使用 .env 中的 Intern-S API key 运行真实高难诊断，并修复发现的问题。",
-        "真实诊断：18 个高难诊断题均返回非空、JSON 可序列化 final_response；路由仍为 18/18 命中。",
-        "问题修复：diagnose_hard_cases.py 在 Windows 控制台打印数学 Unicode 时可能触发 UnicodeEncodeError，已加入安全打印兜底。",
-        "诊断题修正：修正测度积分、复分析、常微分方程三道题的 answer_hint，避免后续评估参考答案误导。",
-        "答案补救：微分几何题暴露模型把 K=1 写入 verification 但 final_response 漏主值的问题；ReasoningAgent 已加入保守补救，仅在题目询问高斯曲率且 verification/solution 中存在 K=...=数值时补到 final_response 开头。",
-        "文档更新：README 记录 .env 真实诊断结果、Unicode 打印修复、诊断题答案提示修正和高斯曲率补救逻辑。",
+        "2026-08-02 Update: completed phase-1 correctness architecture upgrade for high-difficulty math solving.",
+        "Added system-owned solve status fields: schema_valid, content_complete, answer_verified, proof_verified, overall_status, failure_kind, and failure_details. Model-provided _meta is ignored.",
+        "Added VerificationEvidence and SolveAssessment in math_agent_core/state.py, plus safe whitelist SymPy verification in math_agent_core/tools/sympy_tool.py for arithmetic, equation substitution, symbolic equivalence, derivative checks, and integral checks.",
+        "Changed MathAgentOrchestrator retries from repeated identical prompts to targeted repair prompts carrying schema errors, residuals, previous answers, and concrete verifier evidence.",
+        "Hardened ReasoningAgent: unverified raw model output can no longer become final_response; only system-accepted solved candidates are returned, otherwise the conservative fallback is used with trace evidence.",
+        "Added ScriptedClient and FaultInjectionClient tests for invalid JSON, wrong-answer rejection, repair feedback, inconclusive tools, and model _meta forgery.",
+        "Hardened main.py resume behavior: shared local client, skip only successful non-empty outputs, and atomic JSON writes. Added Retry-After and jitter support in intern_s1_client.py without logging secrets.",
+        "Validation: import ok; python -m pytest -q => 29 passed, 1 skipped; python -m compileall -q .; mock baseline runner passed.",
     ]
     backup = append_docx_paragraphs(path, paragraphs)
     print(f"updated {path}; backup {backup}")

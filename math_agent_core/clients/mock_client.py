@@ -59,3 +59,79 @@ class MockClient:
             },
             "learning_hints": ["Use Intern-S1 for real solving; use MockClient for offline tests only."],
         }
+
+
+class ScriptedClient:
+    model = "scripted-client"
+
+    def __init__(self, responses: List[Any]):
+        self.responses = list(responses)
+        self.calls: List[Dict[str, Any]] = []
+
+    def chat(
+        self,
+        messages: List[Dict[str, str]],
+        temperature: float = 0.1,
+        max_tokens: int = 8192,
+        thinking_mode: bool = True,
+    ) -> str:
+        self.calls.append(
+            {
+                "messages": messages,
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+                "thinking_mode": thinking_mode,
+            }
+        )
+        if not self.responses:
+            return json.dumps(self._default_result(), ensure_ascii=False)
+        response = self.responses.pop(0)
+        if isinstance(response, str):
+            return response
+        return json.dumps(response, ensure_ascii=False)
+
+    def _default_result(self) -> Dict[str, Any]:
+        return {
+            "problem_id": "UNKNOWN",
+            "problem_type": "unknown",
+            "task_type": "calculation",
+            "domain_candidates": ["unknown"],
+            "reasoning_plan": ["scripted default"],
+            "solution": [{"step": 1, "content": "No scripted response remained."}],
+            "final_answer": {"answer": "", "answer_type": "unknown"},
+            "verification": {"verification_result": "uncertain", "checks": [], "confidence": 0.0},
+        }
+
+
+class FaultInjectionClient(ScriptedClient):
+    model = "fault-injection-client"
+
+    @classmethod
+    def invalid_json_then(cls, response: Any) -> "FaultInjectionClient":
+        return cls(["{not valid json", response])
+
+    @classmethod
+    def wrong_then_fixed(cls, wrong_answer: str, fixed_answer: str) -> "FaultInjectionClient":
+        return cls(
+            [
+                _calculation_response(wrong_answer, confidence=0.95),
+                _calculation_response(fixed_answer, confidence=0.95),
+            ]
+        )
+
+
+def _calculation_response(answer: str, confidence: float = 0.9) -> Dict[str, Any]:
+    return {
+        "problem_id": "UNKNOWN",
+        "problem_type": "unknown",
+        "task_type": "calculation",
+        "domain_candidates": ["unknown"],
+        "reasoning_plan": ["Compute directly."],
+        "solution": [{"step": 1, "content": f"The candidate answer is {answer}."}],
+        "final_answer": {"answer": answer, "answer_type": "numeric"},
+        "verification": {
+            "verification_result": "pass",
+            "checks": ["Model self-check claimed the answer is consistent."],
+            "confidence": confidence,
+        },
+    }

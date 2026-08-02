@@ -3,6 +3,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from main import is_successful_output
+
 
 def test_sample_runner_outputs_idx_files(tmp_path):
     input_file = tmp_path / "dev.jsonl"
@@ -31,3 +33,13 @@ def test_sample_runner_outputs_idx_files(tmp_path):
     data = json.loads(result_path.read_text(encoding="utf-8"))
     assert data["status"] == "success"
     assert data["final_response"]
+
+
+def test_runner_skips_only_successful_nonempty_outputs(tmp_path):
+    output_path = tmp_path / "0.json"
+
+    output_path.write_text('{"status": "error", "final_response": ""}', encoding="utf-8")
+    assert is_successful_output(output_path) is False
+
+    output_path.write_text('{"status": "success", "final_response": "2"}', encoding="utf-8")
+    assert is_successful_output(output_path) is True

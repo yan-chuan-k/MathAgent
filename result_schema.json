@@ -1,5 +1,6 @@
 {
   "type": "object",
+  "additionalProperties": false,
   "required": [
     "problem_id",
     "problem_type",
@@ -39,6 +40,7 @@
       "type": "array",
       "items": {
         "type": "object",
+        "additionalProperties": false,
         "required": ["step", "content"],
         "properties": {
           "step": {
@@ -52,6 +54,7 @@
     },
     "final_answer": {
       "type": "object",
+      "additionalProperties": false,
       "required": ["answer", "answer_type"],
       "properties": {
         "answer": {
@@ -65,6 +68,7 @@
     },
     "verification": {
       "type": "object",
+      "additionalProperties": false,
       "required": [
         "verification_result",
         "verification_process",
@@ -85,7 +89,47 @@
           }
         },
         "confidence": {
-          "type": "number"
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["verifier", "claim_id", "status", "method", "details", "residual", "assumptions"],
+            "properties": {
+              "verifier": {
+                "type": "string"
+              },
+              "claim_id": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string",
+                "enum": ["pass", "fail", "inconclusive"]
+              },
+              "method": {
+                "type": "string"
+              },
+              "details": {
+                "type": "string"
+              },
+              "residual": {
+                "type": ["string", "null"]
+              },
+              "assumptions": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "issues": {
+          "type": ["array", "string", "object"]
         }
       }
     },
@@ -101,14 +145,44 @@
         "type": "string"
       }
     },
+    "requested_checks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["tool", "arguments"],
+        "properties": {
+          "tool": {
+            "type": "string",
+            "enum": [
+              "symbolic_equivalence",
+              "equation_solution",
+              "numeric_arithmetic",
+              "derivative_check",
+              "integral_check"
+            ]
+          },
+          "arguments": {
+            "type": "object"
+          }
+        }
+      }
+    },
     "_meta": {
       "type": "object",
+      "additionalProperties": false,
       "required": [
         "model",
         "backend",
         "attempts",
         "schema_valid",
         "schema_error",
+        "content_complete",
+        "answer_verified",
+        "proof_verified",
+        "overall_status",
+        "failure_kind",
+        "failure_details",
         "elapsed_seconds"
       ],
       "properties": {
@@ -130,6 +204,38 @@
         },
         "elapsed_seconds": {
           "type": "number"
+        },
+        "content_complete": {
+          "type": "boolean"
+        },
+        "answer_verified": {
+          "type": "boolean"
+        },
+        "proof_verified": {
+          "type": "boolean"
+        },
+        "overall_status": {
+          "type": "string",
+          "enum": ["solved", "probable", "uncertain", "invalid", "error"]
+        },
+        "failure_kind": {
+          "type": ["string", "null"],
+          "enum": [
+            "json_parse",
+            "schema",
+            "wrong_final_answer",
+            "symbolic_contradiction",
+            "numeric_residual",
+            "missing_case",
+            "unsupported_lemma",
+            "circular_reasoning",
+            "low_consensus",
+            "inconclusive",
+            null
+          ]
+        },
+        "failure_details": {
+          "type": "string"
         }
       }
     }

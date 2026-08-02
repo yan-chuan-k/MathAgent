@@ -3,6 +3,8 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any, Dict
 
+from .state import OverallStatus
+
 
 ALLOWED_VERIFICATION_RESULTS = {"pass", "fail", "uncertain"}
 ALLOWED_TASK_TYPES = {
@@ -49,6 +51,7 @@ def empty_result(problem_id: str, model: str, backend: str) -> Dict[str, Any]:
             "verification_result": "uncertain",
             "verification_process": "",
             "checks": [],
+            "evidence": [],
             "confidence": 0.0,
         },
         "assumptions": [],
@@ -59,6 +62,12 @@ def empty_result(problem_id: str, model: str, backend: str) -> Dict[str, Any]:
             "attempts": 1,
             "schema_valid": False,
             "schema_error": None,
+            "content_complete": False,
+            "answer_verified": False,
+            "proof_verified": False,
+            "overall_status": OverallStatus.UNCERTAIN.value,
+            "failure_kind": None,
+            "failure_details": "",
             "elapsed_seconds": 0.0,
         },
     }
@@ -149,6 +158,10 @@ def normalize_result(
         "checks": [str(item) for item in checks],
         "confidence": confidence,
     }
+    evidence = verification.get("evidence", [])
+    if not isinstance(evidence, list):
+        evidence = []
+    normalized["verification"]["evidence"] = [_normalize_evidence_item(item) for item in evidence[:10]]
     if "issues" in verification:
         normalized["verification"]["issues"] = verification["issues"]
 
@@ -166,15 +179,65 @@ def normalize_result(
         assumptions = []
     normalized["assumptions"] = [str(item) for item in assumptions]
 
-    old_meta = result.get("_meta", {}) if isinstance(result, dict) else {}
-    if not isinstance(old_meta, dict):
-        old_meta = {}
+    requested_checks = normalized.get("requested_checks", [])
+    if not isinstance(requested_checks, list):
+        requested_checks = []
+    normalized["requested_checks"] = [_normalize_requested_check(item) for item in requested_checks[:5]]
+
     normalized["_meta"] = {
-        "model": str(old_meta.get("model") or model),
-        "backend": str(old_meta.get("backend") or backend),
-        "attempts": int(old_meta.get("attempts") or attempts),
-        "schema_valid": bool(old_meta.get("schema_valid", False)),
-        "schema_error": old_meta.get("schema_error"),
-        "elapsed_seconds": float(old_meta.get("elapsed_seconds") or elapsed_seconds),
+        "model": str(model),
+        "backend": str(backend),
+        "attempts": int(attempts),
+        "schema_valid": False,
+        "schema_error": None,
+        "content_complete": bool(normalized["final_answer"]["answer"].strip()),
+        "answer_verified": False,
+        "proof_verified": False,
+        "overall_status": OverallStatus.UNCERTAIN.value,
+        "failure_kind": None,
+        "failure_details": "",
+        "elapsed_seconds": float(elapsed_seconds),
     }
     return normalized
+
+
+def _normalize_evidence_item(item: Any) -> Dict[str, Any]:
+    if not isinstance(item, dict):
+        item = {"details": str(item)}
+    status = str(item.get("status") or "inconclusive")
+    if status not in {"pass", "fail", "inconclusive"}:
+        status = "inconclusive"
+    assumptions = item.get("assumptions", [])
+    if isinstance(assumptions, str):
+        assumptions = [assumptions]
+    if not isinstance(assumptions, list):
+        assumptions = []
+    return {
+        "verifier": str(item.get("verifier") or "unknown")[:80],
+        "claim_id": str(item.get("claim_id") or "claim")[:80],
+        "status": status,
+        "method": str(item.get("method") or "unknown")[:120],
+        "details": str(item.get("details") or "")[:500],
+        "residual": None if item.get("residual") is None else str(item.get("residual"))[:300],
+        "assumptions": [str(value)[:200] for value in assumptions[:5]],
+    }
+
+
+def _normalize_requested_check(item: Any) -> Dict[str, Any]:
+    allowed_tools = {
+        "symbolic_equivalence",
+        "equation_solution",
+        "numeric_arithmetic",
+        "derivative_check",
+        "integral_check",
+    }
+    if not isinstance(item, dict):
+        return {"tool": "numeric_arithmetic", "arguments": {}}
+    tool = str(item.get("tool") or "")
+    if tool not in allowed_tools:
+        tool = "numeric_arithmetic"
+    arguments = item.get("arguments")
+    if not isinstance(arguments, dict):
+        arguments = {}
+    safe_arguments = {str(key)[:80]: str(value)[:240] for key, value in arguments.items()}
+    return {"tool": tool, "arguments": safe_arguments}

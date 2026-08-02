@@ -1,6 +1,7 @@
 import argparse
 import json
 import os
+import tempfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any, Dict, List
@@ -64,6 +65,30 @@ def save_json(path, data):
         json.dump(data, file, ensure_ascii=False, indent=2)
 
 
+def save_json_atomic(path, data):
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, temp_name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=str(path.parent))
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as file:
+            json.dump(data, file, ensure_ascii=False, indent=2)
+        os.replace(temp_name, path)
+    finally:
+        if os.path.exists(temp_name):
+            os.unlink(temp_name)
+
+
+def is_successful_output(path) -> bool:
+    path = Path(path)
+    if not path.exists() or path.stat().st_size <= 0:
+        return False
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return False
+    return data.get("status") == "success" and bool(str(data.get("final_response", "")).strip())
+
+
 def build_client(use_mock, thinking_mode=True):
     if use_mock:
         return MockClient()
@@ -79,11 +104,13 @@ def run_baseline(args) -> None:
     items = load_jsonl(input_path)
     max_workers = max(1, int(os.getenv("LOCAL_MAX_CONCURRENCY", "8")))
     max_workers = min(max_workers, max(1, len(items)))
+    thinking_mode = not args.no_thinking_mode
+    shared_client = build_client(args.mock, thinking_mode=thinking_mode)
 
     def run_one(item: Dict[str, Any]) -> Dict[str, Any]:
         idx = item.get("idx", item.get("id", item.get("problem_id", "unknown")))
         output_path = output_dir / f"{idx}.json"
-        if output_path.exists() and output_path.stat().st_size > 0:
+        if is_successful_output(output_path):
             return {"idx": idx, "status": "skipped", "path": str(output_path)}
         if item.get("_load_error"):
             result = {
@@ -93,16 +120,15 @@ def run_baseline(args) -> None:
                 "error": {"type": "JSONDecodeError", "message": item["_load_error"]},
                 "trace": [],
             }
-            save_json(output_path, result)
+            save_json_atomic(output_path, result)
             return {"idx": idx, "status": "error", "path": str(output_path)}
 
         problem_text = str(item.get("problem", item.get("problem_text", "")))
         metadata = {key: value for key, value in item.items() if key not in {"problem", "problem_text", "answer"}}
 
         try:
-            thinking_mode = not args.no_thinking_mode
             agent = ReasoningAgent(
-                client=build_client(args.mock, thinking_mode=thinking_mode),
+                client=shared_client,
                 max_retries=args.max_retries,
                 thinking_mode=thinking_mode,
             )
@@ -121,7 +147,7 @@ def run_baseline(args) -> None:
                 "error": {"type": type(exc).__name__, "message": str(exc)[:300]},
                 "trace": [],
             }
-        save_json(output_path, result)
+        save_json_atomic(output_path, result)
         return {"idx": idx, "status": result["status"], "path": str(output_path)}
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:

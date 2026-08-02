@@ -214,7 +214,11 @@ OUTPUT_CONTRACT = {
 }
 
 
-def build_solver_messages(problem: Dict[str, Any], problem_text: str) -> list[dict[str, str]]:
+def build_solver_messages(
+    problem: Dict[str, Any],
+    problem_text: str,
+    repair_context: Dict[str, Any] | None = None,
+) -> list[dict[str, str]]:
     problem_id = str(problem.get("problem_id", "UNKNOWN"))
     subject_hint = _safe_string(problem.get("subject") or problem.get("type") or problem.get("category") or "unknown")
     route_hint = _normalize_route_hint(problem.get("_route_hint"))
@@ -231,6 +235,14 @@ def build_solver_messages(problem: Dict[str, Any], problem_text: str) -> list[di
         "problem_statement": problem_text,
     }
     primary_output_hint = DOMAIN_OUTPUT_HINTS.get(primary_domain, DOMAIN_OUTPUT_HINTS["advanced_math"])
+    repair_block = ""
+    if repair_context:
+        repair_block = (
+            "\n\nREPAIR_CONTEXT\n"
+            f"{json.dumps(_safe_repair_context(repair_context), ensure_ascii=False, indent=2)}\n\n"
+            "Use this context to fix only the identified mathematical or formatting failure. "
+            "Do not repeat a strategy that produced the same residual or contradiction.\n"
+        )
     user_prompt = (
         "Solve the mathematical problem in INPUT_PAYLOAD.\n\n"
         "INPUT_PAYLOAD_BEGIN\n"
@@ -250,6 +262,7 @@ def build_solver_messages(problem: Dict[str, Any], problem_text: str) -> list[di
         "- Differential equations/PDE: substitute the solution and check all initial or boundary conditions.\n"
         "- Optimization: check feasibility, optimality conditions, and the reported objective value.\n"
         "- If verification fails, repair the solution before returning JSON.\n\n"
+        f"{repair_block}"
         "OUTPUT_CONTRACT\n"
         f"{json.dumps(OUTPUT_CONTRACT, ensure_ascii=False, indent=2)}\n\n"
         "Return exactly one valid JSON object matching OUTPUT_CONTRACT."
@@ -258,6 +271,35 @@ def build_solver_messages(problem: Dict[str, Any], problem_text: str) -> list[di
         {"role": "system", "content": BASE_SYSTEM_PROMPT},
         {"role": "user", "content": user_prompt},
     ]
+
+
+def _safe_repair_context(value: Dict[str, Any]) -> Dict[str, Any]:
+    allowed_keys = {
+        "failure_kind",
+        "failure_details",
+        "schema_error",
+        "evidence",
+        "previous_answer",
+        "instruction",
+    }
+    cleaned: Dict[str, Any] = {}
+    for key, item in value.items():
+        if key not in allowed_keys:
+            continue
+        if isinstance(item, list):
+            cleaned[key] = [_truncate_for_prompt(entry) for entry in item[:5]]
+        else:
+            cleaned[key] = _truncate_for_prompt(item)
+    return cleaned
+
+
+def _truncate_for_prompt(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {str(k): _truncate_for_prompt(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_truncate_for_prompt(item) for item in value[:5]]
+    text = str(value)
+    return text if len(text) <= 800 else text[:800]
 
 
 def _safe_string(value: Any) -> str:

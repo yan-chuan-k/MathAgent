@@ -1,3 +1,3 @@
-from .mock_client import MockClient
+from .mock_client import FaultInjectionClient, MockClient, ScriptedClient
 
-__all__ = ["MockClient"]
+__all__ = ["FaultInjectionClient", "MockClient", "ScriptedClient"]

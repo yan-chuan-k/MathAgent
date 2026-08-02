@@ -23,7 +23,7 @@ class ReasoningAgent:
                 client=self.client,
                 max_retries=self.max_retries,
                 enable_repair=True,
-                enable_tool_verify=False,
+                enable_tool_verify=True,
                 backend="simple",
                 thinking_mode=self.thinking_mode,
             )
@@ -40,9 +40,6 @@ class ReasoningAgent:
             if self.orchestrator is not None:
                 result = self.orchestrator.solve(problem=problem, metadata=safe_metadata)
                 final_response = self._extract_final_response(result, problem)
-                if final_response == DEFAULT_FALLBACK:
-                    raw_output = getattr(self.orchestrator, "last_log", {}).get("solver_raw_output", "")
-                    final_response = extract_final_answer(raw_output, problem=problem)
                 trace = trace_from_orchestrator_result(result, getattr(self.orchestrator, "last_log", None))
                 return self._json_safe_result(final_response, trace)
 
@@ -105,6 +102,8 @@ class ReasoningAgent:
 
     def _extract_final_response(self, result: Any, problem: str) -> str:
         if isinstance(result, dict):
+            if not self._is_acceptable_orchestrator_result(result):
+                return DEFAULT_FALLBACK
             value = result.get("final_response")
             if isinstance(value, str) and value.strip():
                 normalized = normalize_final_response(value, problem=problem)
@@ -119,6 +118,17 @@ class ReasoningAgent:
                 normalized = normalize_final_response(final_answer, problem=problem)
                 return self._repair_missing_requested_value(normalized, result, problem)
         return DEFAULT_FALLBACK
+
+    def _is_acceptable_orchestrator_result(self, result: Dict[str, Any]) -> bool:
+        meta = result.get("_meta") if isinstance(result.get("_meta"), dict) else {}
+        status = meta.get("overall_status")
+        if status != "solved":
+            return False
+        if not bool(meta.get("content_complete")):
+            return False
+        if status == "solved" and not (meta.get("answer_verified") or meta.get("proof_verified")):
+            return False
+        return True
 
     def _repair_missing_requested_value(self, final_response: str, result: Any, problem: str) -> str:
         problem_text = str(problem or "").lower()

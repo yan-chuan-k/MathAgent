@@ -45,6 +45,11 @@ def trace_from_orchestrator_result(result: Dict[str, Any], log: Dict[str, Any] |
                 {
                     "attempts": meta.get("attempts"),
                     "schema_valid": meta.get("schema_valid"),
+                    "overall_status": meta.get("overall_status"),
+                    "content_complete": meta.get("content_complete"),
+                    "answer_verified": meta.get("answer_verified"),
+                    "proof_verified": meta.get("proof_verified"),
+                    "failure_kind": meta.get("failure_kind"),
                 },
             )
         )
