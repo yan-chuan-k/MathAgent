@@ -45,6 +45,13 @@ class ReasoningAgent:
                 result = self.orchestrator.solve(problem=problem, metadata=safe_metadata)
                 final_response = self._extract_final_response(result, problem)
                 trace = trace_from_orchestrator_result(result, getattr(self.orchestrator, "last_log", None))
+                if final_response == DEFAULT_FALLBACK:
+                    raw_output = self._extract_last_raw_output()
+                    final_response = extract_final_answer(raw_output, problem=problem)
+                if final_response == DEFAULT_FALLBACK:
+                    response = self._direct_model_call(problem, safe_metadata)
+                    final_response = extract_final_answer(self._normalize_model_response(response), problem=problem)
+                    trace.append(make_trace_step("fallback", "orchestrator did not produce a usable answer; used direct client.chat"))
                 return self._json_safe_result(final_response, trace)
 
             response = self._direct_model_call(problem, safe_metadata)
@@ -106,8 +113,6 @@ class ReasoningAgent:
 
     def _extract_final_response(self, result: Any, problem: str) -> str:
         if isinstance(result, dict):
-            if not self._is_acceptable_orchestrator_result(result):
-                return DEFAULT_FALLBACK
             value = result.get("final_response")
             if isinstance(value, str) and value.strip():
                 normalized = normalize_final_response(value, problem=problem)
@@ -121,6 +126,12 @@ class ReasoningAgent:
             if isinstance(final_answer, str) and final_answer.strip():
                 normalized = normalize_final_response(final_answer, problem=problem)
                 return self._repair_missing_requested_value(normalized, result, problem)
+            solution = result.get("solution")
+            if isinstance(solution, list) and solution:
+                for item in reversed(solution):
+                    content = item.get("content") if isinstance(item, dict) else item
+                    if isinstance(content, str) and content.strip():
+                        return extract_final_answer(content, problem=problem)
         return DEFAULT_FALLBACK
 
     def _is_acceptable_orchestrator_result(self, result: Dict[str, Any]) -> bool:
@@ -133,6 +144,14 @@ class ReasoningAgent:
         if status == "solved" and not (meta.get("answer_verified") or meta.get("proof_verified")):
             return False
         return True
+
+    def _extract_last_raw_output(self) -> str:
+        log = getattr(self.orchestrator, "last_log", None)
+        if isinstance(log, dict):
+            raw = log.get("solver_raw_output")
+            if isinstance(raw, str) and raw.strip():
+                return raw
+        return ""
 
     def _repair_missing_requested_value(self, final_response: str, result: Any, problem: str) -> str:
         problem_text = str(problem or "").lower()

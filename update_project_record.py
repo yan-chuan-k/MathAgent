@@ -63,13 +63,12 @@ def _paragraph(text: str) -> ET.Element:
 def main() -> None:
     path = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("math_agent_project_record.docx")
     paragraphs = [
-        "2026-08-02 Phase 4B Linear Algebra Update: added matrix tool verification and whitelist registry.",
-        "Added MathTool base and ToolRegistry for controlled whitelist tool execution.",
-        "Added MatrixTool with bounded exact checks for determinants, matrix products, inverses, linear-system residuals, ranks, eigenpair residuals, orthogonality, normalization, and matrix/vector equivalence.",
-        "Added math_agent_core/verifiers/linear_algebra.py. It consumes only structured requested_checks and never executes model-generated Python code.",
-        "Extended requested_checks schema and normalization to preserve nested matrix/vector arguments safely.",
-        "Integrated linear algebra evidence into MathAgentOrchestrator. Decisive matrix failures reject candidates; decisive matrix passes can satisfy AcceptancePolicy.",
-        "Validation: python -m pytest -q => 47 passed, 1 skipped; python -m compileall -q .; mock baseline runner passed.",
+        "2026-08-04 Submission Format Hotfix: adjusted user_agent.py to avoid returning fallback answers when the orchestrator has a usable candidate answer but verification is inconclusive.",
+        "Changed ReasoningAgent final_response extraction to prefer final_response, final_answer.answer, and the last solution step before falling back.",
+        "Added fallback recovery from the orchestrator raw solver output, then a direct client.chat call if no usable answer can be extracted.",
+        "Rationale: the official preliminary runner mainly scores final_response, so uncertain local verification should not discard a judgeable model answer.",
+        "Validation: python -c \"from user_agent import ReasoningAgent; print('import ok')\" passed.",
+        "Validation: python -m pytest tests\\test_user_agent_entry.py tests\\test_answer_extraction.py tests\\test_sample_runner.py => 13 passed.",
     ]
     backup = append_docx_paragraphs(path, paragraphs)
     print(f"updated {path}; backup {backup}")
