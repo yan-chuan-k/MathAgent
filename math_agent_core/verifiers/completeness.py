@@ -13,7 +13,11 @@ def check_completeness(problem_text: str, result: Dict[str, Any]) -> List[Verifi
     evidence: List[VerificationEvidence] = []
     if targets:
         covered, missing = _target_coverage(answer, targets)
-        status = EvidenceStatus.PASS.value if not missing else EvidenceStatus.FAIL.value
+        if missing and len(targets) == 1 and len(targets[0]["name"].split()) > 1:
+            status = EvidenceStatus.INCONCLUSIVE.value
+            missing = []
+        else:
+            status = EvidenceStatus.FAIL.value if missing else EvidenceStatus.PASS.value if covered else EvidenceStatus.INCONCLUSIVE.value
         evidence.append(
             VerificationEvidence(
                 verifier="completeness",
@@ -50,12 +54,21 @@ def extract_answer_targets(problem_text: str) -> List[Dict[str, str]]:
     for index, part in enumerate(_split_multipart(text), start=1):
         target = _extract_target_from_part(part)
         if target:
-            targets.append({"name": target, "symbol": target, "part": str(index)})
+            for name in _expand_compound_target(target):
+                targets.append({"name": name, "symbol": name, "part": str(index)})
     if not targets:
         target = _extract_target_from_part(text)
         if target:
             targets.append({"name": target, "symbol": target, "part": "1"})
     return _dedupe_targets(targets)
+
+
+def _expand_compound_target(target: str) -> List[str]:
+    text = str(target or "").strip()
+    match = re.match(r"(?:the\s+)?(determinant)\s+and\s+(rank|trace|inverse)\b", text, flags=re.IGNORECASE)
+    if match:
+        return [match.group(1), match.group(2)]
+    return [text]
 
 
 def _split_multipart(text: str) -> List[str]:
@@ -76,7 +89,10 @@ def _extract_target_from_part(part: str) -> str:
     for pattern in patterns:
         match = re.search(pattern, part, flags=re.IGNORECASE)
         if match:
-            return _clean_target(match.group(1))
+            target = _clean_target(match.group(1))
+            if target.lower() in {"an antiderivative", "the value", "the answer", "a solution", "the solution"}:
+                return ""
+            return target
     symbol_match = re.search(r"\b([A-Z][A-Za-z0-9_]*|[a-z])\s*[=：:]", part)
     if symbol_match:
         return symbol_match.group(1)
@@ -110,8 +126,6 @@ def _target_coverage(answer: str, targets: List[Dict[str, str]]) -> tuple[List[s
         symbol = target.get("symbol") or name
         tokens = _target_tokens(name, symbol)
         if any(token and token.lower() in answer_lower for token in tokens):
-            covered.append(name)
-        elif len(targets) == 1 and answer.strip():
             covered.append(name)
         else:
             missing.append(name)

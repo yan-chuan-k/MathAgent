@@ -149,6 +149,10 @@
               },
               "is_decisive": {
                 "type": "boolean"
+              },
+              "claim_scope": {
+                "type": "string",
+                "enum": ["full_answer", "subclaim"]
               }
             }
           }
@@ -182,6 +186,7 @@
             "enum": [
               "symbolic_equivalence",
               "equation_solution",
+              "equation_solution_set",
               "numeric_arithmetic",
               "derivative_check",
               "integral_check",

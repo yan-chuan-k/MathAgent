@@ -235,3 +235,29 @@ def test_solver_runtime_configuration_reaches_client():
     orchestrator.solve("Compute 1+1.", {"idx": "runtime"})
     assert client.calls[0]["max_tokens"] == 4096
     assert client.calls[0]["temperature"] == 0.37
+
+
+def test_missing_root_cannot_be_solved_by_substitution_only():
+    client = ScriptedClient([_response("x=2", confidence=0.95)])
+    orchestrator = MathAgentOrchestrator(client=client, max_retries=0, max_candidates=1, enable_finalizer=False)
+    result = orchestrator.solve("Solve x^2 - 5*x + 6 = 0 for x.", {"idx": "missing-root"})
+    assert result["_meta"]["overall_status"] != "solved"
+
+
+def test_multi_target_matrix_requires_all_claims():
+    response = _response("-2", confidence=0.95)
+    response["problem_type"] = "linear_algebra"
+    client = ScriptedClient([response])
+    orchestrator = MathAgentOrchestrator(client=client, max_retries=0, max_candidates=1, enable_finalizer=False)
+    result = orchestrator.solve("Compute the determinant and rank of [[1,2],[3,4]].", {"idx": "multi-target"})
+    assert result["_meta"]["overall_status"] != "solved"
+
+
+def test_single_determinant_system_check_is_decisive():
+    response = _response("-2", confidence=0.95)
+    response["problem_type"] = "linear_algebra"
+    client = ScriptedClient([response])
+    orchestrator = MathAgentOrchestrator(client=client, max_retries=0, max_candidates=1, enable_finalizer=False)
+    result = orchestrator.solve("Compute determinant of [[1,2],[3,4]].", {"idx": "single-det"})
+    assert result["_meta"]["overall_status"] == "solved"
+    assert len(client.calls) == 1

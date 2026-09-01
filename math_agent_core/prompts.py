@@ -213,7 +213,7 @@ OUTPUT_CONTRACT = {
         "confidence": 0.0,
     },
     "requested_checks": [
-        {"tool": "symbolic_equivalence|equation_solution|numeric_arithmetic|matrix_determinant", "arguments": {}, "claim_id": "optional"}
+        {"tool": "symbolic_equivalence|equation_solution|equation_solution_set|numeric_arithmetic|matrix_determinant", "arguments": {}, "claim_id": "optional"}
     ],
     "assumptions": ["essential assumption not explicit in the problem; otherwise empty"],
     "learning_hints": ["optional concise reusable hint"],
@@ -406,6 +406,15 @@ def build_reviser_messages(
         "failure_kind": critic.get("failure_kind") or "inconclusive",
         "failure_details": critic.get("first_error") or critic.get("suggested_repair") or "",
         "repair_target": critic.get("repair_target") or critic.get("suggested_repair") or "",
+        "disputed_candidate": failed_candidate,
+        "critic_judgment": {
+            key: critic.get(key)
+            for key in (
+                "disagreement", "candidate_a_issue", "candidate_b_issue",
+                "preferred_candidate", "repair_candidate", "repair_target", "confidence",
+            )
+            if key in critic
+        },
         "evidence": evidence[:5],
         "previous_answer": _candidate_answer(failed_candidate),
         "instruction": (
@@ -462,12 +471,18 @@ def _safe_repair_context(value: Dict[str, Any]) -> Dict[str, Any]:
         "evidence",
         "previous_answer",
         "instruction",
+        "repair_target",
+        "disputed_candidate",
+        "critic_judgment",
     }
     cleaned: Dict[str, Any] = {}
     for key, item in value.items():
         if key not in allowed_keys:
             continue
-        if isinstance(item, list):
+        if key == "disputed_candidate" and isinstance(item, dict):
+            keep = {name: item.get(name) for name in ("strategy", "reasoning_plan", "solution", "final_answer") if name in item}
+            cleaned[key] = _truncate_for_prompt(keep)
+        elif isinstance(item, list):
             cleaned[key] = [_truncate_for_prompt(entry) for entry in item[:5]]
         else:
             cleaned[key] = _truncate_for_prompt(item)
@@ -522,6 +537,9 @@ def _normalize_route_hint(value: Any) -> dict[str, Any]:
     return {
         "primary_domain": primary_domain or "unknown",
         "domain_candidates": domain_candidates[:3],
+        "task_type": str(value.get("task_type") or "unknown") if isinstance(value.get("task_type"), str) else "unknown",
+        "verifiability": str(value.get("verifiability") or "low") if isinstance(value.get("verifiability"), str) else "low",
+        "difficulty": str(value.get("difficulty") or "medium") if isinstance(value.get("difficulty"), str) else "medium",
     }
 
 

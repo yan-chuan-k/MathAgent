@@ -66,6 +66,7 @@ class SafeSympyTool:
         if tool_name not in {
             "symbolic_equivalence",
             "equation_solution",
+            "equation_solution_set",
             "numeric_arithmetic",
             "derivative_check",
             "integral_check",
@@ -108,6 +109,8 @@ class SafeSympyTool:
             return self._symbolic_equivalence(arguments, claim_id)
         if tool_name == "equation_solution":
             return self._equation_solution(arguments, claim_id)
+        if tool_name == "equation_solution_set":
+            return self._equation_solution_set(arguments, claim_id)
         if tool_name == "numeric_arithmetic":
             return self._numeric_arithmetic(arguments, claim_id)
         if tool_name == "derivative_check":
@@ -131,6 +134,13 @@ class SafeSympyTool:
                             "variable": variable,
                             "value": value,
                         },
+                    }
+                )
+            if re.search(r"\b(?:solve|solutions?|roots?)\b", problem_text, flags=re.IGNORECASE):
+                inferred.append(
+                    {
+                        "tool": "equation_solution_set",
+                        "arguments": {"equation": equation, "variable": variable, "answer": answer},
                     }
                 )
 
@@ -171,6 +181,7 @@ class SafeSympyTool:
             residual=str(residual),
             verification_level=VerificationLevel.EXACT_SYMBOLIC.value,
             is_decisive=True,
+            claim_scope="subclaim",
         )
 
     def _equation_solution(self, arguments: Dict[str, Any], claim_id: str) -> VerificationEvidence:
@@ -206,6 +217,46 @@ class SafeSympyTool:
             residual=str(residual),
             verification_level=VerificationLevel.EXACT_SYMBOLIC.value,
             is_decisive=True,
+            claim_scope="full_answer",
+        )
+
+    def _equation_solution_set(self, arguments: Dict[str, Any], claim_id: str) -> VerificationEvidence:
+        import sympy as sp
+
+        equation = str(arguments.get("equation") or "")
+        variable_name = str(arguments.get("variable") or "x")
+        answer = str(arguments.get("answer") or "")
+        left_text, right_text = _split_equation(equation)
+        symbol = _symbol(variable_name)
+        expression = _parse_expr(left_text) - _parse_expr(right_text)
+        if expression.has(sp.Derivative) or len(str(expression)) > 240:
+            raise ValueError("equation is outside conservative solution-set scope")
+        expected = sp.solveset(expression, symbol, domain=sp.S.Complexes)
+        if not isinstance(expected, sp.FiniteSet):
+            return VerificationEvidence(
+                verifier=self.verifier_name, claim_id=claim_id,
+                status=EvidenceStatus.INCONCLUSIVE.value, method="equation_solution_set",
+                details="Safe solveset did not return a finite solution set.",
+                verification_level=VerificationLevel.EXACT_SYMBOLIC.value, is_decisive=False,
+            )
+        candidate_values = []
+        for value in re.findall(r"(?:[A-Za-z]\s*=\s*)?([+\-]?\d+(?:/\d+)?(?:\.\d+)?)", answer):
+            candidate_values.append(_parse_expr(value))
+        if not candidate_values:
+            return VerificationEvidence(
+                verifier=self.verifier_name, claim_id=claim_id,
+                status=EvidenceStatus.INCONCLUSIVE.value, method="equation_solution_set",
+                details="Could not safely extract candidate roots.",
+                verification_level=VerificationLevel.EXACT_SYMBOLIC.value, is_decisive=False,
+            )
+        candidate_set = sp.FiniteSet(*candidate_values)
+        residual = sp.simplify(candidate_set.symmetric_difference(expected))
+        status = EvidenceStatus.PASS.value if candidate_set == expected else EvidenceStatus.FAIL.value
+        return VerificationEvidence(
+            verifier=self.verifier_name, claim_id=claim_id, status=status,
+            method="equation_solution_set", details="Compared candidate roots with SymPy solveset.",
+            residual=str(residual), verification_level=VerificationLevel.EXACT_SYMBOLIC.value,
+            is_decisive=True, claim_scope="full_answer" if status == EvidenceStatus.PASS.value else "subclaim",
         )
 
     def _derivative_check(self, arguments: Dict[str, Any], claim_id: str) -> VerificationEvidence:

@@ -222,6 +222,7 @@ def _normalize_evidence_item(item: Any) -> Dict[str, Any]:
         "assumptions": [str(value)[:200] for value in assumptions[:5]],
         "verification_level": _normalize_verification_level(item.get("verification_level")),
         "is_decisive": bool(item.get("is_decisive", False)),
+        "claim_scope": str(item.get("claim_scope") or "subclaim") if str(item.get("claim_scope") or "subclaim") in {"full_answer", "subclaim"} else "subclaim",
     }
 
 
@@ -243,6 +244,7 @@ def _normalize_requested_check(item: Any) -> Dict[str, Any]:
     allowed_tools = {
         "symbolic_equivalence",
         "equation_solution",
+        "equation_solution_set",
         "numeric_arithmetic",
         "derivative_check",
         "integral_check",

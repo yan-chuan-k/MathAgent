@@ -559,6 +559,7 @@ class MathAgentOrchestrator:
                         assumptions=[str(value) for value in assumptions],
                         verification_level=str(item.get("verification_level") or VerificationLevel.MODEL_CRITIC.value),
                         is_decisive=bool(item.get("is_decisive", False)),
+                        claim_scope=str(item.get("claim_scope") or "subclaim"),
                     )
                 )
         assessment = self._assess_result(result, validation, evidence)

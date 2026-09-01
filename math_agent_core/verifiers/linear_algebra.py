@@ -82,19 +82,64 @@ def run_system_inferred_matrix_verification(problem_text: str, answer: str) -> L
     if not normalized_answer or any(ch.isalpha() for ch in normalized_answer):
         return []
     lower = text.lower()
-    tool_name = None
+    targets = []
     if "determinant" in lower or "det(" in lower or "行列式" in text:
-        tool_name = "matrix_determinant"
-        args = {"matrix": matrix, "expected": normalized_answer}
-    elif "rank" in lower:
-        tool_name = "matrix_rank"
-        args = {"matrix": matrix, "expected": normalized_answer}
-    else:
+        targets.append("determinant")
+    if re.search(r"\brank\b", lower) or "秩" in text:
+        targets.append("rank")
+    if not targets:
         return []
-    evidence = MatrixTool().run({"tool": tool_name, "arguments": args, "claim_id": "system_matrix_check"})
-    evidence.details = f"System-inferred {tool_name} check; exact verification."
-    evidence.is_decisive = True
-    return [evidence]
+    evidence: List[VerificationEvidence] = []
+    if len(targets) > 1:
+        missing = [target for target in targets if target not in lower]
+        # A bare scalar cannot establish a multi-target response.
+        mentioned = [target for target in targets if re.search(rf"{target}\s*[:=]", lower)]
+        if len(mentioned) < len(targets):
+            evidence.append(VerificationEvidence(
+                verifier="matrix_tool", claim_id="system_matrix_targets",
+                status=EvidenceStatus.FAIL.value, method="target_coverage",
+                details=f"Multiple matrix targets requested: {targets}.", residual=", ".join(targets),
+                verification_level=VerificationLevel.EXACT_SYMBOLIC.value,
+                is_decisive=True, claim_scope="subclaim",
+            ))
+            return evidence
+    all_pass = True
+    if "determinant" in targets:
+        expected = _extract_labeled_number(answer, "determinant") if len(targets) > 1 else normalized_answer
+        if expected:
+            item = MatrixTool().run({"tool": "matrix_determinant", "arguments": {"matrix": matrix, "expected": expected}, "claim_id": "system_matrix_determinant"})
+            item.details = "System-inferred matrix determinant check; exact verification."
+            item.is_decisive = True
+            item.claim_scope = "full_answer" if len(targets) == 1 else "subclaim"
+            evidence.append(item)
+            all_pass = all_pass and item.status == EvidenceStatus.PASS.value
+        else:
+            all_pass = False
+    if "rank" in targets:
+        expected = _extract_labeled_number(answer, "rank") if len(targets) > 1 else normalized_answer
+        if expected:
+            item = MatrixTool().run({"tool": "matrix_rank", "arguments": {"matrix": matrix, "expected": expected}, "claim_id": "system_matrix_rank"})
+            item.details = "System-inferred matrix rank check; exact verification."
+            item.is_decisive = True
+            item.claim_scope = "full_answer" if len(targets) == 1 else "subclaim"
+            evidence.append(item)
+            all_pass = all_pass and item.status == EvidenceStatus.PASS.value
+        else:
+            all_pass = False
+    if len(targets) > 1 and all_pass:
+        evidence.append(VerificationEvidence(
+            verifier="matrix_tool", claim_id="system_matrix_targets_complete",
+            status=EvidenceStatus.PASS.value, method="target_coverage",
+            details="All system-inferred matrix targets were verified.", residual=None,
+            verification_level=VerificationLevel.EXACT_SYMBOLIC.value,
+            is_decisive=True, claim_scope="full_answer",
+        ))
+    return evidence
+
+
+def _extract_labeled_number(answer: str, label: str) -> str:
+    match = re.search(rf"{label}\s*[:=]\s*([+\-]?\d+(?:\.\d+)?)", str(answer or ""), flags=re.IGNORECASE)
+    return match.group(1) if match else ""
 
 
 def _extract_matrix_checks(result: Dict[str, Any]) -> List[Dict[str, Any]]:

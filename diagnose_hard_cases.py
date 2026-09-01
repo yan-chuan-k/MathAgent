@@ -16,6 +16,27 @@ from user_agent import ReasoningAgent
 
 BASE_DIR = Path(__file__).resolve().parent
 
+HARD_GROUND_TRUTH = {
+    "hard_discrete_math": "132",
+    "hard_numerical_analysis": "x_{n+1}=1/2*(x_n+2/x_n), order 2",
+    "hard_measure_integration": "1/2",
+    "hard_differential_geometry": "K = 1",
+    "hard_probability": "1/(lambda+mu)",
+    "hard_abstract_algebra": "72",
+    "hard_stochastic_process": "e^(-2*lambda)*(2*lambda)^2/2!",
+    "hard_complex_analysis": "2*pi*(e^(-1)-e)",
+    "hard_ode": "y=(x+C)e^(-x)",
+    "hard_statistics": "sample mean",
+    "hard_functional_analysis": "Cauchy-Schwarz; equality iff linearly dependent",
+    "hard_linear_regression": "beta_hat=(X^T X)^(-1)X^T y",
+    "hard_pde": "u(x,t)=e^(-pi^2*t)sin(pi*x)",
+    "hard_advanced_math": "0 if dual norm <= 1, +infinity otherwise",
+    "hard_linear_algebra": "(t-2)^2",
+    "hard_optimization": "(x,y)=(2,0), optimum 6",
+    "hard_real_analysis": "uniformly convergent",
+    "hard_topology": "compact",
+}
+
 
 class CountingClient:
     def __init__(self, client: Any):
@@ -37,7 +58,10 @@ def load_jsonl(path: Path) -> List[Dict[str, Any]]:
         for line in file:
             line = line.strip()
             if line:
-                items.append(json.loads(line))
+                item = json.loads(line)
+                if item.get("idx") in HARD_GROUND_TRUTH and "expected_answer" not in item:
+                    item["expected_answer"] = HARD_GROUND_TRUTH[item["idx"]]
+                items.append(item)
     return items
 
 
@@ -68,6 +92,12 @@ def evaluate(
     valid_outputs = 0
     answer_evaluated = 0
     answer_correct = 0
+    primary_correct = 0
+    primary_evaluated = 0
+    claims_correct = 0
+    claims_evaluated = 0
+    full_correct = 0
+    full_evaluated = 0
     candidate_agreements = 0
     candidate_conflicts = 0
     candidate_comparisons = 0
@@ -75,6 +105,7 @@ def evaluate(
     candidate_b_triggers = 0
     repair_triggers = 0
     targeted_repairs = 0
+    expected_answer_count = 0
 
     for item in items:
         problem = str(item.get("problem", ""))
@@ -115,13 +146,22 @@ def evaluate(
             repair_triggers += int(metrics.get("repair_triggered", 0) or 0)
             targeted_repairs += int(metrics.get("targeted_repair_triggered", 0) or 0)
         model_calls = (client.total_calls - calls_before) if client is not None else 0
-        # Grading-only fallback: answer_hint is never included in solver metadata
-        # and is used only when a fixture lacks an explicit expected_answer.
-        expected_answer = item.get("expected_answer", item.get("answer", item.get("answer_hint")))
+        # Ground truth is grading-only and is never included in solver metadata.
+        expected_answer = item.get("expected_answer", item.get("answer"))
+        expected_answer_count += int(expected_answer is not None)
         answer_ok = None
         if agent is not None and expected_answer is not None:
             answer_evaluated += 1
-            answer_ok = answers_equivalent(final_response, str(expected_answer))
+            primary_expected, required_claims = _expected_spec(expected_answer)
+            answer_ok = answers_equivalent(final_response, primary_expected)
+            primary_evaluated += 1
+            primary_correct += int(answer_ok)
+            claim_results = [claim.lower() in final_response.lower() for claim in required_claims]
+            if required_claims:
+                claims_evaluated += len(required_claims)
+                claims_correct += sum(claim_results)
+                full_evaluated += 1
+                full_correct += int(answer_ok and all(claim_results))
             if answer_ok:
                 answer_correct += 1
 
@@ -153,6 +193,12 @@ def evaluate(
         "answer_evaluated": answer_evaluated,
         "answer_correct": answer_correct,
         "answer_accuracy": answer_correct / answer_evaluated if answer_evaluated else None,
+        "primary_answer_accuracy": primary_correct / primary_evaluated if primary_evaluated else None,
+        "required_claim_accuracy": claims_correct / claims_evaluated if claims_evaluated else None,
+        "full_problem_accuracy": full_correct / full_evaluated if full_evaluated else (
+            answer_correct / answer_evaluated if answer_evaluated else None
+        ),
+        "expected_answer_coverage": expected_answer_count / len(items) if items else 0.0,
         "model_calls": client.total_calls if client is not None else 0,
         "model_calls_per_problem": client.total_calls / len(items) if client is not None and items else 0.0,
         "model_calls_by_role": dict(client.calls_by_role) if client is not None else {},
@@ -168,6 +214,16 @@ def evaluate(
     with open(output_file, "w", encoding="utf-8") as file:
         json.dump(summary, file, ensure_ascii=False, indent=2)
     return summary
+
+
+def _expected_spec(value: Any) -> tuple[str, list[str]]:
+    if isinstance(value, dict):
+        primary = value.get("primary", value.get("answer", ""))
+        claims = value.get("required_claims", [])
+        if not isinstance(claims, list):
+            claims = [claims]
+        return str(primary), [str(item) for item in claims if str(item).strip()]
+    return str(value), []
 
 
 def print_summary(summary: Dict[str, Any]) -> None:

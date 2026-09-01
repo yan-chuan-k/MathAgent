@@ -53,6 +53,7 @@ class VerificationEvidence:
     assumptions: List[str] = field(default_factory=list)
     verification_level: str = VerificationLevel.MODEL_CRITIC.value
     is_decisive: bool = False
+    claim_scope: str = "subclaim"
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
