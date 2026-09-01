@@ -200,6 +200,28 @@ def estimate_verifiability(domain: str, task_type: str) -> str:
     return "low"
 
 
+def estimate_difficulty(problem_text: str, domain: str, task_type: str, verifiability: str) -> str:
+    """Deterministic difficulty heuristic; intentionally no model call."""
+    text = str(problem_text or "")
+    lowered = text.lower()
+    complexity = 0
+    if len(text) > 500:
+        complexity += 1
+    if len(re.findall(r"\b(?:prove|show|derive|case|suppose|whereas|if and only if)\b", lowered)) >= 2:
+        complexity += 1
+    if task_type in {"proof", "construction", "counterexample"}:
+        complexity += 2
+    if domain in {"measure_integration", "functional_analysis", "topology", "differential_geometry", "stochastic_process"}:
+        complexity += 1
+    if verifiability == "low":
+        complexity += 1
+    if complexity >= 3:
+        return "hard"
+    if complexity >= 1 or verifiability == "medium":
+        return "medium"
+    return "easy"
+
+
 def classify_problem(problem_text: str, metadata: Dict[str, Any] | None = None, limit: int = 4) -> Dict[str, Any]:
     metadata = metadata if isinstance(metadata, dict) else {}
     text = " ".join(str(part or "") for part in _iter_hint_parts(problem_text, metadata)).lower()
@@ -228,11 +250,14 @@ def classify_problem(problem_text: str, metadata: Dict[str, Any] | None = None, 
     domains = [domain for domain, _ in ranked[:limit]] or ["unknown"]
     explicit_task_type = str(metadata.get("task_type") or "").strip().lower()
     task_type = explicit_task_type if explicit_task_type in _TASK_TYPES else classify_task_type(problem_text)
+    verifiability = estimate_verifiability(domains[0], task_type)
+    difficulty = estimate_difficulty(problem_text, domains[0], task_type, verifiability)
     return {
         "primary_domain": domains[0],
         "domain_candidates": domains,
         "task_type": task_type,
-        "verifiability": estimate_verifiability(domains[0], task_type),
+        "verifiability": verifiability,
+        "difficulty": difficulty,
         "scores": {domain: round(score, 3) for domain, score in ranked[:limit]},
         "priors": {domain: BENCHMARK_DOMAIN_PRIORS.get(domain, 0.0) for domain in domains},
     }

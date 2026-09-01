@@ -68,6 +68,13 @@ def evaluate(
     valid_outputs = 0
     answer_evaluated = 0
     answer_correct = 0
+    candidate_agreements = 0
+    candidate_conflicts = 0
+    candidate_comparisons = 0
+    critic_triggers = 0
+    candidate_b_triggers = 0
+    repair_triggers = 0
+    targeted_repairs = 0
 
     for item in items:
         problem = str(item.get("problem", ""))
@@ -94,6 +101,19 @@ def evaluate(
                     valid_outputs += 1
             except TypeError:
                 pass
+            run_log = getattr(agent.orchestrator, "last_log", {}) if agent.orchestrator is not None else {}
+            comparison = run_log.get("route", {}).get("candidate_comparison", {}) if isinstance(run_log, dict) else {}
+            if isinstance(comparison, dict) and comparison.get("agreement") is not None:
+                candidate_comparisons += 1
+                if comparison.get("agreement"):
+                    candidate_agreements += 1
+                else:
+                    candidate_conflicts += 1
+            metrics = run_log.get("route", {}) if isinstance(run_log, dict) else {}
+            critic_triggers += int(metrics.get("critic_triggered", 0) or 0)
+            candidate_b_triggers += int(metrics.get("candidate_b_triggered", 0) or 0)
+            repair_triggers += int(metrics.get("repair_triggered", 0) or 0)
+            targeted_repairs += int(metrics.get("targeted_repair_triggered", 0) or 0)
         model_calls = (client.total_calls - calls_before) if client is not None else 0
         expected_answer = item.get("expected_answer", item.get("answer"))
         answer_ok = None
@@ -134,6 +154,12 @@ def evaluate(
         "model_calls": client.total_calls if client is not None else 0,
         "model_calls_per_problem": client.total_calls / len(items) if client is not None and items else 0.0,
         "model_calls_by_role": dict(client.calls_by_role) if client is not None else {},
+        "candidate_agreement_rate": candidate_agreements / candidate_comparisons if candidate_comparisons else 0.0,
+        "candidate_conflict_rate": candidate_conflicts / candidate_comparisons if candidate_comparisons else 0.0,
+        "critic_trigger_rate": critic_triggers / len(items) if items else 0.0,
+        "candidate_b_trigger_rate": candidate_b_triggers / len(items) if items else 0.0,
+        "targeted_repair_rate": targeted_repairs / len(items) if items else 0.0,
+        "repair_trigger_rate": repair_triggers / len(items) if items else 0.0,
         "rows": rows,
     }
     output_file.parent.mkdir(parents=True, exist_ok=True)
@@ -151,7 +177,13 @@ def print_summary(summary: Dict[str, Any]) -> None:
         f"use_mock={summary['use_mock']} "
         f"answer_accuracy={summary['answer_accuracy']} "
         f"model_calls={summary['model_calls']} "
-        f"calls_per_problem={summary['model_calls_per_problem']:.3f}"
+        f"calls_per_problem={summary['model_calls_per_problem']:.3f} "
+        f"candidate_agreement_rate={summary['candidate_agreement_rate']:.3f} "
+        f"candidate_conflict_rate={summary['candidate_conflict_rate']:.3f} "
+        f"candidate_b_trigger_rate={summary['candidate_b_trigger_rate']:.3f} "
+        f"critic_trigger_rate={summary['critic_trigger_rate']:.3f} "
+        f"repair_trigger_rate={summary['repair_trigger_rate']:.3f} "
+        f"targeted_repair_rate={summary['targeted_repair_rate']:.3f}"
     )
     for row in summary["rows"]:
         marker = "OK" if row["route_ok"] else "MISS"

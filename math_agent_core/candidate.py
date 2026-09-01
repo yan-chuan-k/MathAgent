@@ -17,12 +17,14 @@ class CandidateSolution:
     normalized_answer: str = ""
     cluster_id: str = ""
     score: float = 0.0
+    profile: str = "direct"
 
     def to_trace_dict(self) -> Dict[str, Any]:
         meta = self.result.get("_meta", {}) if isinstance(self.result, dict) else {}
         return {
             "candidate_id": self.candidate_id,
             "strategy": self.strategy,
+            "profile": self.profile,
             "answer": self.normalized_answer[:300],
             "overall_status": meta.get("overall_status"),
             "failure_kind": meta.get("failure_kind"),

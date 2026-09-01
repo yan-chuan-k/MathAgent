@@ -13,7 +13,7 @@ from .json_utils import ValidationResult, extract_json_from_text, repair_json_lo
 from .prompts import build_critic_messages, build_finalizer_messages, build_planner_messages, build_solver_messages
 from .router import classify_problem
 from .schema import empty_result
-from .search import choose_strategy_budget, rank_candidates, strategies_for_domain
+from .search import choose_strategy_budget, compare_candidate_answers, rank_candidates, strategies_for_domain
 from .state import EvidenceStatus, FailureKind, OverallStatus, SolveAssessment, SolveState, VerificationEvidence, VerificationLevel
 from .tools import run_sympy_verification
 from .verifiers import check_completeness, run_linear_algebra_verification
@@ -52,10 +52,17 @@ class MathAgentOrchestrator:
             "critic": 0,
             "finalizer": 0,
         }
+        self._run_metrics: Dict[str, int] = {
+            "candidate_b_triggered": 0,
+            "critic_triggered": 0,
+            "repair_triggered": 0,
+            "targeted_repair_triggered": 0,
+        }
 
     def solve(self, problem: Any, metadata: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         started = time.time()
         self._model_call_counts = {key: 0 for key in self._model_call_counts}
+        self._run_metrics = {key: 0 for key in self._run_metrics}
         problem = self._normalize_problem_input(problem, metadata)
         problem_id = str(problem.get("problem_id") or "UNKNOWN")
         problem_text = self._get_problem_text(problem)
@@ -96,6 +103,9 @@ class MathAgentOrchestrator:
         while candidate_index < len(strategies):
             strategy = strategies[candidate_index]
             candidate_index += 1
+            profile = "direct" if candidate_index == 1 else "independent"
+            if profile == "independent":
+                self._run_metrics["candidate_b_triggered"] += 1
             solve_state.current_strategy = strategy
             candidate = self._solve_candidate(
                 problem=problem,
@@ -103,19 +113,21 @@ class MathAgentOrchestrator:
                 problem_id=problem_id,
                 route_hint=route_hint,
                 strategy=strategy,
+                profile=profile,
                 candidate_index=candidate_index,
                 started=started,
                 log=log,
             )
             candidates.append(candidate)
             self._update_solve_state(solve_state, candidate)
-            if candidate.assessment.overall_status == OverallStatus.SOLVED.value and candidate_index == 1:
+            difficulty = str(route_hint.get("difficulty") or "medium")
+            if candidate.assessment.overall_status == OverallStatus.SOLVED.value and candidate_index == 1 and difficulty != "hard":
                 break
             if (
                 candidate_index == 1
                 and len(strategies) == 1
                 and self.max_candidates >= 2
-                and candidate.assessment.overall_status == OverallStatus.UNCERTAIN.value
+                and candidate.assessment.overall_status != OverallStatus.SOLVED.value
             ):
                 primary_domain = str(route_hint.get("primary_domain") or "unknown")
                 alternate = next(
@@ -126,7 +138,7 @@ class MathAgentOrchestrator:
                     strategies.append(alternate)
                     solve_state.budget["expanded_after_uncertain"] = True
 
-        self._review_conflicting_candidates(problem_text, candidates)
+        comparison = self._review_conflicting_candidates(problem_text, candidates, problem, route_hint, problem_id, started, log)
         candidates = self._cluster_and_rank_candidates(candidates)
         selected = candidates[0] if candidates else None
         result = selected.result if selected is not None else empty_result(problem_id, model=self.model, backend=self.backend)
@@ -155,6 +167,9 @@ class MathAgentOrchestrator:
             "candidate_count": len(candidates),
             "enable_critic": self.enable_critic,
             "enable_finalizer": self.enable_finalizer,
+            "difficulty": route_hint.get("difficulty", "medium"),
+            "candidate_comparison": comparison,
+            **self._run_metrics,
         }
         log["model_calls"] = {
             **self._model_call_counts,
@@ -175,8 +190,15 @@ class MathAgentOrchestrator:
         problem_text: str,
         repair_context: Optional[Dict[str, Any]] = None,
         strategy: Optional[str] = None,
+        profile: str = "direct",
     ) -> str:
-        messages = build_solver_messages(problem, problem_text, repair_context=repair_context, strategy=strategy)
+        messages = build_solver_messages(
+            problem,
+            problem_text,
+            repair_context=repair_context,
+            strategy=strategy,
+            profile=profile,
+        )
         self._increment_model_call("solver")
         try:
             return self.client.chat(
@@ -202,9 +224,11 @@ class MathAgentOrchestrator:
         pool = strategies_for_domain(str(primary_domain))
         task_type = str(route_hint.get("task_type") or problem.get("task_type") or "unknown")
         verifiability = str(route_hint.get("verifiability") or "low")
-        budget = choose_strategy_budget(task_type, self.max_candidates, verifiability)
+        difficulty = str(route_hint.get("difficulty") or "medium")
+        budget = choose_strategy_budget(task_type, self.max_candidates, verifiability, difficulty=difficulty)
         if budget <= 2:
-            return pool[:budget] or ["direct_computation"]
+            initial_budget = 1 if route_hint.get("difficulty") == "medium" else budget
+            return pool[:initial_budget] or ["direct_computation"]
 
         selected: list[str] = []
         planner_selected = self._call_planner(problem, problem_text, pool)
@@ -241,6 +265,8 @@ class MathAgentOrchestrator:
         candidate_index: int,
         started: float,
         log: Dict[str, Any],
+        profile: str = "direct",
+        initial_repair_context: Dict[str, Any] | None = None,
     ) -> CandidateSolution:
         result: Dict[str, Any] = empty_result(problem_id, model=self.model, backend=self.backend)
         assessment = SolveAssessment(
@@ -252,11 +278,17 @@ class MathAgentOrchestrator:
             failure_kind=FailureKind.JSON_PARSE.value,
             failure_details="candidate not attempted",
         )
-        repair_context: Dict[str, Any] | None = None
+        repair_context: Dict[str, Any] | None = initial_repair_context
         last_evidence: list[VerificationEvidence] = []
         for attempt in range(1, self.max_retries + 2):
             try:
-                raw_output = self._call_solver(problem, problem_text, repair_context=repair_context, strategy=strategy)
+                raw_output = self._call_solver(
+                    problem,
+                    problem_text,
+                    repair_context=repair_context,
+                    strategy=strategy,
+                    profile=profile,
+                )
                 log["solver_raw_output"] = raw_output
                 parsed = extract_json_from_text(raw_output)
                 result, assessment, last_evidence, validation = self._normalize_validate_assess(
@@ -267,16 +299,11 @@ class MathAgentOrchestrator:
                     started=started,
                     problem_text=problem_text,
                 )
-                if self.enable_critic and assessment.overall_status == OverallStatus.PROBABLE.value:
-                    critic = self._call_critic(problem_text, result, assessment.evidence_dicts())
-                    if critic:
-                        self._apply_critic(result, assessment, critic)
-                        assessment = self._reassess_with_current_evidence(result, validation)
-                else:
-                    critic = None
+                critic = None
 
                 if self._needs_repair(result, assessment) and attempt <= self.max_retries:
                     repair_context = self._build_repair_context(result, assessment, validation)
+                    self._run_metrics["repair_triggered"] += 1
                     log["repair_history"].append(
                         {
                             "candidate": candidate_index,
@@ -288,7 +315,7 @@ class MathAgentOrchestrator:
                         }
                     )
                     continue
-                return self._make_candidate(candidate_index, strategy, result, assessment, last_evidence, critic)
+                return self._make_candidate(candidate_index, strategy, result, assessment, last_evidence, critic, profile=profile)
             except Exception as exc:
                 result = empty_result(problem_id, model=self.model, backend=self.backend)
                 result["_meta"]["attempts"] = attempt
@@ -314,7 +341,7 @@ class MathAgentOrchestrator:
                     }
                     continue
                 break
-        return self._make_candidate(candidate_index, strategy, result, assessment, last_evidence, None)
+        return self._make_candidate(candidate_index, strategy, result, assessment, last_evidence, None, profile=profile)
 
     def _normalize_validate_assess(
         self,
@@ -357,9 +384,21 @@ class MathAgentOrchestrator:
             self._apply_assessment(result, assessment)
         return result, assessment, evidence, validation
 
-    def _call_critic(self, problem_text: str, result: Dict[str, Any], evidence: list[Dict[str, Any]]) -> Dict[str, Any] | None:
+    def _call_critic(
+        self,
+        problem_text: str,
+        result: Dict[str, Any] | None = None,
+        evidence: list[Dict[str, Any]] | None = None,
+        candidate_b: Dict[str, Any] | None = None,
+    ) -> Dict[str, Any] | None:
         try:
-            messages = build_critic_messages(problem_text, result, evidence)
+            messages = build_critic_messages(
+                problem_text,
+                candidate=result,
+                evidence=evidence or [],
+                candidate_a=result,
+                candidate_b=candidate_b,
+            )
             self._increment_model_call("critic")
             raw = self._chat(messages, temperature=0.0, max_tokens=1024)
             parsed = extract_json_from_text(raw)
@@ -372,6 +411,12 @@ class MathAgentOrchestrator:
                 "first_error": str(parsed.get("first_error") or "")[:500],
                 "missing_targets": parsed.get("missing_targets", []),
                 "suggested_repair": str(parsed.get("suggested_repair") or "")[:500],
+                "disagreement": str(parsed.get("disagreement") or parsed.get("first_error") or "")[:500],
+                "candidate_a_issue": str(parsed.get("candidate_a_issue") or "")[:500],
+                "candidate_b_issue": str(parsed.get("candidate_b_issue") or "")[:500],
+                "preferred_candidate": str(parsed.get("preferred_candidate") or "uncertain"),
+                "repair_target": str(parsed.get("repair_target") or parsed.get("suggested_repair") or "")[:500],
+                "confidence": min(1.0, max(0.0, float(parsed.get("confidence", 0.0) or 0.0))),
             }
         except Exception:
             return None
@@ -389,33 +434,65 @@ class MathAgentOrchestrator:
             return ""
         return ""
 
-    def _review_conflicting_candidates(self, problem_text: str, candidates: list[CandidateSolution]) -> None:
-        if not self.enable_critic or len(candidates) < 2:
-            return
-        if any(candidate.assessment.overall_status == OverallStatus.SOLVED.value for candidate in candidates):
-            return
-        if len({candidate.cluster_id for candidate in candidates if candidate.cluster_id}) < 2:
-            return
-
-        review_target = next(
-            (
-                candidate
-                for candidate in candidates
-                if candidate.critic is None
-                and candidate.assessment.overall_status in {OverallStatus.UNCERTAIN.value, OverallStatus.PROBABLE.value}
-            ),
-            None,
+    def _review_conflicting_candidates(
+        self,
+        problem_text: str,
+        candidates: list[CandidateSolution],
+        problem: Dict[str, Any] | None = None,
+        route_hint: Dict[str, Any] | None = None,
+        problem_id: str = "UNKNOWN",
+        started: float = 0.0,
+        log: Dict[str, Any] | None = None,
+    ) -> Dict[str, Any]:
+        if len(candidates) < 2:
+            return {"agreement": None, "agreement_type": "single", "confidence": 0.0}
+        comparison = compare_candidate_answers(candidates[0].result, candidates[1].result)
+        if comparison.get("agreement"):
+            return comparison
+        if not self.enable_critic:
+            return comparison
+        critic = self._call_critic(
+            problem_text,
+            result=candidates[0].result,
+            evidence=candidates[0].assessment.evidence_dicts() + candidates[1].assessment.evidence_dicts(),
+            candidate_b=candidates[1].result,
         )
-        if review_target is None:
-            return
-        critic = self._call_critic(problem_text, review_target.result, review_target.assessment.evidence_dicts())
         if critic is None:
-            return
-        review_target.critic = critic
-        self._apply_critic(review_target.result, review_target.assessment, critic)
-        validation = validate_result(review_target.result, self.schema)
-        review_target.assessment = self._reassess_with_current_evidence(review_target.result, validation)
-        review_target.evidence = list(review_target.assessment.evidence)
+            return comparison
+        self._run_metrics["critic_triggered"] += 1
+        comparison["critic"] = critic
+        preferred = critic.get("preferred_candidate")
+        target = candidates[0] if preferred == "A" else candidates[1] if preferred == "B" else candidates[0]
+        if target is not None:
+            target.critic = critic
+        repair_target = critic.get("repair_target")
+        if repair_target and problem is not None and self.enable_repair and self.max_retries > 0:
+            self._run_metrics["targeted_repair_triggered"] += 1
+            self._run_metrics["repair_triggered"] += 1
+            comparison["targeted_repair"] = repair_target
+            repair_context = {
+                "failure_kind": FailureKind.LOW_CONSENSUS.value,
+                "failure_details": critic.get("disagreement", "candidate conflict"),
+                "repair_target": repair_target,
+                "instruction": "Recompute only the disputed step and dependent final answer.",
+            }
+            repair_candidate = self._solve_candidate(
+                problem,
+                problem_text,
+                problem_id,
+                route_hint or {},
+                target.strategy if target is not None else "targeted_repair",
+                2,
+                started,
+                log or {"solver_raw_output": "", "repair_history": [], "errors": []},
+                profile="verification_oriented",
+                initial_repair_context=repair_context,
+            )
+            if target is not None:
+                candidates[candidates.index(target)] = repair_candidate
+                post_repair = compare_candidate_answers(candidates[0].result, candidates[1].result)
+                comparison["post_repair_comparison"] = post_repair
+        return comparison
 
     def _apply_critic(self, result: Dict[str, Any], assessment: SolveAssessment, critic: Dict[str, Any]) -> None:
         assessment.evidence.append(self._critic_to_evidence(critic))
@@ -476,6 +553,7 @@ class MathAgentOrchestrator:
         assessment: SolveAssessment,
         evidence: list[VerificationEvidence],
         critic: Dict[str, Any] | None,
+        profile: str = "direct",
     ) -> CandidateSolution:
         answer = ""
         final_answer = result.get("final_answer") if isinstance(result, dict) else None
@@ -491,6 +569,7 @@ class MathAgentOrchestrator:
             critic=critic,
             normalized_answer=normalized,
             cluster_id=answer_cluster_key(normalized),
+            profile=profile,
         )
 
     def _cluster_and_rank_candidates(self, candidates: list[CandidateSolution]) -> list[CandidateSolution]:

@@ -3,6 +3,7 @@ from math_agent_core.router import (
     classify_problem,
     classify_task_type,
     estimate_verifiability,
+    estimate_difficulty,
 )
 
 
@@ -74,3 +75,11 @@ def test_router_honors_explicit_task_type_metadata():
 def test_verifiability_normalizes_labels_and_distinguishes_domains():
     assert estimate_verifiability(" LINEAR_ALGEBRA ", " CALCULATION ") == "high"
     assert estimate_verifiability("probability", "calculation") == "medium"
+
+
+def test_router_adds_deterministic_difficulty():
+    easy = classify_problem("Compute 1+1.", {"subject": "linear algebra"})
+    hard = classify_problem("Prove carefully, including all cases, that the theorem holds.", {"subject": "topology"})
+    assert easy["difficulty"] in {"easy", "medium"}
+    assert hard["difficulty"] == "hard"
+    assert estimate_difficulty("1+1", "linear_algebra", "calculation", "high") == "easy"

@@ -214,11 +214,28 @@ OUTPUT_CONTRACT = {
 }
 
 
+SOLVER_PROFILES = {
+    "direct": (
+        "Solve directly with the shortest sound route. Compute the requested quantity explicitly, "
+        "then perform one concrete check. Prefer a decisive exact answer over speculative alternatives."
+    ),
+    "independent": (
+        "Solve independently from first principles using a route different from a routine direct derivation. "
+        "Re-derive key claims, test edge cases, and do not assume another solver's answer or reasoning."
+    ),
+    "verification_oriented": (
+        "Act as a verification-oriented solver. Make every claimed transformation auditable, expose residuals "
+        "or theorem hypotheses, and choose an answer that can be checked deterministically."
+    ),
+}
+
+
 def build_solver_messages(
     problem: Dict[str, Any],
     problem_text: str,
     repair_context: Dict[str, Any] | None = None,
     strategy: str | None = None,
+    profile: str = "direct",
 ) -> list[dict[str, str]]:
     problem_id = str(problem.get("problem_id", "UNKNOWN"))
     subject_hint = _safe_string(problem.get("subject") or problem.get("type") or problem.get("category") or "unknown")
@@ -251,6 +268,7 @@ def build_solver_messages(
             f"{_truncate_for_prompt(strategy)}\n"
             "Use this strategy as the main route. If it is mathematically unsuitable, state why in assumptions and switch conservatively.\n"
         )
+    profile_instruction = SOLVER_PROFILES.get(profile, SOLVER_PROFILES["direct"])
     user_prompt = (
         "Solve the mathematical problem in INPUT_PAYLOAD.\n\n"
         "INPUT_PAYLOAD_BEGIN\n"
@@ -270,6 +288,8 @@ def build_solver_messages(
         "- Differential equations/PDE: substitute the solution and check all initial or boundary conditions.\n"
         "- Optimization: check feasibility, optimality conditions, and the reported objective value.\n"
         "- If verification fails, repair the solution before returning JSON.\n\n"
+        "SOLVER_PROFILE\n"
+        f"{profile_instruction}\n\n"
         f"{strategy_block}"
         f"{repair_block}"
         "OUTPUT_CONTRACT\n"
@@ -277,7 +297,10 @@ def build_solver_messages(
         "Return exactly one valid JSON object matching OUTPUT_CONTRACT."
     )
     return [
-        {"role": "system", "content": BASE_SYSTEM_PROMPT},
+        {
+            "role": "system",
+            "content": f"{BASE_SYSTEM_PROMPT}\n\nSOLVER_PROFILE ({profile}): {profile_instruction}",
+        },
         {"role": "user", "content": user_prompt},
     ]
 
@@ -308,7 +331,40 @@ def build_planner_messages(problem: Dict[str, Any], problem_text: str, strategie
     ]
 
 
-def build_critic_messages(problem_text: str, candidate: Dict[str, Any], evidence: list[Dict[str, Any]]) -> list[dict[str, str]]:
+def build_critic_messages(
+    problem_text: str,
+    candidate: Dict[str, Any] | None = None,
+    evidence: list[Dict[str, Any]] | None = None,
+    candidate_a: Dict[str, Any] | None = None,
+    candidate_b: Dict[str, Any] | None = None,
+) -> list[dict[str, str]]:
+    candidate = candidate if candidate is not None else candidate_a or {}
+    evidence = evidence or []
+    if candidate_b is not None:
+        payload = {
+            "problem_statement": problem_text,
+            "candidate_a": candidate_a or candidate,
+            "candidate_b": candidate_b,
+            "system_evidence": evidence[:5],
+        }
+        return [
+            {
+                "role": "system",
+                "content": (
+                    "You are a conflict-oriented mathematical critic and judge. Compare candidates A and B only. "
+                    "Locate the earliest substantive mathematical divergence, identify the disputed claim, "
+                    "recommend A, B, or uncertain, and specify a targeted repair. Do not re-solve the full problem."
+                ),
+            },
+            {
+                "role": "user",
+                "content": (
+                    f"{json.dumps(payload, ensure_ascii=False, indent=2)}\n"
+                    'Return exactly one JSON object with keys: disagreement, candidate_a_issue, candidate_b_issue, '
+                    'preferred_candidate (A|B|uncertain), repair_target, confidence.'
+                ),
+            },
+        ]
     payload = {
         "problem_statement": problem_text,
         "candidate": candidate,
@@ -343,13 +399,23 @@ def build_reviser_messages(
     repair_context = {
         "failure_kind": critic.get("failure_kind") or "inconclusive",
         "failure_details": critic.get("first_error") or critic.get("suggested_repair") or "",
+        "repair_target": critic.get("repair_target") or critic.get("suggested_repair") or "",
         "evidence": evidence[:5],
         "previous_answer": _candidate_answer(failed_candidate),
-        "instruction": "Repair only the identified error and return the normal solver JSON contract.",
+        "instruction": (
+            "Recompute only repair_target and the downstream claims that depend on it. "
+            "Preserve unaffected reasoning and return the normal solver JSON contract."
+        ),
     }
     problem_with_context = dict(problem)
     problem_with_context["_route_hint"] = problem.get("_route_hint")
-    return build_solver_messages(problem_with_context, problem_text, repair_context=repair_context, strategy="local_repair")
+    return build_solver_messages(
+        problem_with_context,
+        problem_text,
+        repair_context=repair_context,
+        strategy="local_repair",
+        profile="verification_oriented",
+    )
 
 
 def build_finalizer_messages(problem_text: str, selected_candidate: Dict[str, Any]) -> list[dict[str, str]]:

@@ -35,6 +35,7 @@ def choose_strategy_budget(
     task_type: str,
     max_candidates: int = 3,
     verifiability: str = "medium",
+    difficulty: str | None = None,
 ) -> int:
     """Return an adaptive candidate count, capped by ``max_candidates``."""
     max_candidates = max(1, int(max_candidates))
@@ -42,8 +43,13 @@ def choose_strategy_budget(
         return 1
     task_type = str(task_type or "unknown").strip().lower()
     verifiability = str(verifiability or "medium").strip().lower()
+    difficulty = str(difficulty or "").strip().lower()
     if verifiability not in {"high", "medium", "low"}:
         verifiability = "medium"
+    if difficulty == "easy" and verifiability == "high":
+        return 1
+    if difficulty == "hard":
+        return min(max_candidates, 2)
     if task_type in {"proof", "construction", "counterexample"}:
         return min(max_candidates, 2)
     if task_type == "choice" or (task_type == "calculation" and verifiability == "high"):
