@@ -118,6 +118,7 @@ def test_multi_candidate_ranking_prefers_verified_solution():
         max_retries=0,
         enable_tool_verify=True,
         enable_critic=True,
+        enable_finalizer=False,
         max_candidates=2,
     )
 
@@ -128,7 +129,7 @@ def test_multi_candidate_ranking_prefers_verified_solution():
     assert orchestrator.last_log["candidates"][0]["score"] >= orchestrator.last_log["candidates"][1]["score"]
 
 
-def test_decisive_tool_pass_is_not_overridden_by_critic_failure():
+def test_decisive_tool_pass_skips_critic():
     client = ScriptedClient(
         {
             "solver": [
@@ -152,16 +153,18 @@ def test_decisive_tool_pass_is_not_overridden_by_critic_failure():
         max_retries=0,
         enable_tool_verify=True,
         enable_critic=True,
+        enable_finalizer=False,
         max_candidates=2,
     )
 
     result = orchestrator.solve("1+1=?", {"idx": 4})
 
     assert result["_meta"]["overall_status"] == "solved"
-    assert orchestrator.last_log["candidates"][0]["critic_status"] == "fail"
+    assert len(client.calls) == 1
+    assert orchestrator.last_log["candidates"][0]["critic_status"] is None
     evidence = result["verification"]["evidence"]
     assert any(item["verification_level"] == "exact_symbolic" and item["is_decisive"] for item in evidence)
-    assert any(item["verification_level"] == "model_critic" and item["status"] == "fail" for item in evidence)
+    assert not any(item["verification_level"] == "model_critic" for item in evidence)
 
 
 def test_finalizer_formats_selected_candidate_without_changing_verification():

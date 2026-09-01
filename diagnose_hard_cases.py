@@ -9,11 +9,26 @@ from typing import Any, Dict, Iterable, List
 
 from intern_s1_client import InternS1Client
 from math_agent_core.clients import MockClient
+from math_agent_core.evaluation import answers_equivalent
 from math_agent_core.router import classify_problem
 from user_agent import ReasoningAgent
 
 
 BASE_DIR = Path(__file__).resolve().parent
+
+
+class CountingClient:
+    def __init__(self, client: Any):
+        self.client = client
+        self.model = getattr(client, "model", "unknown")
+        self.total_calls = 0
+        self.calls_by_role: Dict[str, int] = {}
+
+    def chat(self, *args, **kwargs):
+        role = _detect_call_role(kwargs.get("messages", args[0] if args else []))
+        self.total_calls += 1
+        self.calls_by_role[role] = self.calls_by_role.get(role, 0) + 1
+        return self.client.chat(*args, **kwargs)
 
 
 def load_jsonl(path: Path) -> List[Dict[str, Any]]:
@@ -45,15 +60,22 @@ def evaluate(
     items = load_jsonl(input_file)
     if include_ids:
         items = [item for item in items if str(item.get("idx", "")) in include_ids]
-    client = build_client(use_mock=use_mock, thinking_mode=thinking_mode) if run_agent else None
+    raw_client = build_client(use_mock=use_mock, thinking_mode=thinking_mode) if run_agent else None
+    client = CountingClient(raw_client) if raw_client is not None else None
     agent = ReasoningAgent(client=client, thinking_mode=thinking_mode) if client is not None else None
     rows = []
     route_hits = 0
     valid_outputs = 0
+    answer_evaluated = 0
+    answer_correct = 0
 
     for item in items:
         problem = str(item.get("problem", ""))
-        metadata = {key: value for key, value in item.items() if key not in {"problem", "answer_hint"}}
+        metadata = {
+            key: value
+            for key, value in item.items()
+            if key not in {"problem", "answer", "expected_answer", "answer_hint"}
+        }
         route = classify_problem(problem, metadata)
         expected = str(item.get("expected_domain", ""))
         route_ok = route.get("primary_domain") == expected or expected in route.get("domain_candidates", [])
@@ -62,6 +84,7 @@ def evaluate(
 
         result = None
         final_response = ""
+        calls_before = client.total_calls if client is not None else 0
         if agent is not None:
             result = agent.solve(problem, metadata)
             final_response = str(result.get("final_response", "")).strip() if isinstance(result, dict) else ""
@@ -71,6 +94,14 @@ def evaluate(
                     valid_outputs += 1
             except TypeError:
                 pass
+        model_calls = (client.total_calls - calls_before) if client is not None else 0
+        expected_answer = item.get("expected_answer", item.get("answer"))
+        answer_ok = None
+        if agent is not None and expected_answer is not None:
+            answer_evaluated += 1
+            answer_ok = answers_equivalent(final_response, str(expected_answer))
+            if answer_ok:
+                answer_correct += 1
 
         rows.append(
             {
@@ -81,6 +112,9 @@ def evaluate(
                 "route_candidates": route.get("domain_candidates"),
                 "route_ok": route_ok,
                 "final_response": final_response,
+                "expected_answer": expected_answer,
+                "answer_ok": answer_ok,
+                "model_calls": model_calls,
                 "answer_hint": item.get("answer_hint"),
                 "agent_result": result,
             }
@@ -94,6 +128,12 @@ def evaluate(
         "run_agent": run_agent,
         "use_mock": use_mock,
         "valid_outputs": valid_outputs,
+        "answer_evaluated": answer_evaluated,
+        "answer_correct": answer_correct,
+        "answer_accuracy": answer_correct / answer_evaluated if answer_evaluated else None,
+        "model_calls": client.total_calls if client is not None else 0,
+        "model_calls_per_problem": client.total_calls / len(items) if client is not None and items else 0.0,
+        "model_calls_by_role": dict(client.calls_by_role) if client is not None else {},
         "rows": rows,
     }
     output_file.parent.mkdir(parents=True, exist_ok=True)
@@ -108,15 +148,35 @@ def print_summary(summary: Dict[str, Any]) -> None:
         f"route_hits={summary['route_hits']} "
         f"route_accuracy={summary['route_accuracy']:.3f} "
         f"run_agent={summary['run_agent']} "
-        f"use_mock={summary['use_mock']}"
+        f"use_mock={summary['use_mock']} "
+        f"answer_accuracy={summary['answer_accuracy']} "
+        f"model_calls={summary['model_calls']} "
+        f"calls_per_problem={summary['model_calls_per_problem']:.3f}"
     )
     for row in summary["rows"]:
         marker = "OK" if row["route_ok"] else "MISS"
         _safe_print(
             f"{marker} {row['idx']}: expected={row['expected_domain']} "
             f"primary={row['route_primary']} candidates={row['route_candidates']} "
-            f"final={row['final_response'][:80]}"
+            f"calls={row['model_calls']} final={row['final_response'][:80]}"
         )
+
+
+def _detect_call_role(messages: Any) -> str:
+    if not isinstance(messages, list):
+        return "unknown"
+    system_text = " ".join(
+        str(message.get("content", ""))
+        for message in messages
+        if isinstance(message, dict) and message.get("role") == "system"
+    ).lower()
+    if "mathematical critic" in system_text:
+        return "critic"
+    if "mathematical planning agent" in system_text:
+        return "planner"
+    if "final answer formatter" in system_text:
+        return "finalizer"
+    return "solver"
 
 
 def _safe_print(text: str) -> None:

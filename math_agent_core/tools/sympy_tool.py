@@ -11,6 +11,7 @@ from math_agent_core.state import EvidenceStatus, VerificationEvidence, Verifica
 MAX_EXPR_LENGTH = 240
 MAX_TOOL_TIMEOUT_SECONDS = 2.0
 _DANGEROUS_TOKENS = ("__", "import", "exec", "eval", "lambda", "open(", "read(", "write(", "os.", "sys.")
+_CANDIDATE_CHECK_NOTICE = "Candidate-proposed auxiliary check; not sufficient to verify final_answer."
 
 
 class SafeSympyTool:
@@ -34,8 +35,9 @@ class SafeSympyTool:
 
         problem_text = str(problem_text or "")
         answer = str(answer or "").strip()
-        checks = self._build_checks(problem_text, answer, result)
-        if not checks:
+        inferred_checks = self._build_checks(problem_text, answer)
+        requested_checks = _extract_structured_tool_checks(result)
+        if not inferred_checks and not requested_checks:
             return [
                 VerificationEvidence(
                     verifier=self.verifier_name,
@@ -49,8 +51,13 @@ class SafeSympyTool:
             ]
 
         evidence: List[VerificationEvidence] = []
-        for index, check in enumerate(checks, start=1):
+        for index, check in enumerate(inferred_checks, start=1):
             evidence.append(self.run_check(check, claim_id=f"check_{index}"))
+        for index, check in enumerate(requested_checks, start=1):
+            requested_evidence = self.run_check(check, claim_id=f"requested_check_{index}")
+            requested_evidence.is_decisive = False
+            requested_evidence.details = f"{requested_evidence.details.rstrip()} {_CANDIDATE_CHECK_NOTICE}"
+            evidence.append(requested_evidence)
         return evidence
 
     def run_check(self, spec: Dict[str, Any], claim_id: str = "tool_check") -> VerificationEvidence:
@@ -109,11 +116,7 @@ class SafeSympyTool:
             return self._integral_check(arguments, claim_id)
         raise ValueError(f"unsupported tool {tool_name}")
 
-    def _build_checks(self, problem_text: str, answer: str, result: Dict[str, Any]) -> List[Dict[str, Any]]:
-        checks = _extract_structured_tool_checks(result)
-        if checks:
-            return checks[:3]
-
+    def _build_checks(self, problem_text: str, answer: str) -> List[Dict[str, Any]]:
         inferred: List[Dict[str, Any]] = []
         equation = _extract_first_equation(problem_text)
         answer_values = _extract_answer_values(answer)
@@ -352,7 +355,7 @@ def _extract_structured_tool_checks(result: Dict[str, Any]) -> List[Dict[str, An
     for item in checks:
         if isinstance(item, dict) and isinstance(item.get("tool"), str) and isinstance(item.get("arguments"), dict):
             safe_checks.append({"tool": item["tool"], "arguments": dict(item["arguments"])})
-    return safe_checks
+    return safe_checks[:3]
 
 
 def _extract_first_equation(text: str) -> Optional[str]:

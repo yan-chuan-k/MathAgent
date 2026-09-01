@@ -143,6 +143,63 @@ _SUBJECT_ALIASES: Dict[str, str] = {
 }
 
 
+_TASK_TYPE_PATTERNS: Tuple[Tuple[str, Tuple[str, ...]], ...] = (
+    ("counterexample", ("反例", "counterexample", "disprove")),
+    ("construction", ("构造", "construct")),
+    ("choice", ("选择题", "which of the following", "正确的是", "不正确的是", "选项")),
+    ("proof", ("证明", "prove", "show that")),
+    ("derivation", ("推导", "derive", "deduce")),
+    (
+        "calculation",
+        (
+            "计算",
+            "求解",
+            "求出",
+            "求值",
+            "求",
+            "compute",
+            "calculate",
+            "evaluate",
+            "solve",
+            "find",
+            "determine",
+        ),
+    ),
+)
+
+_TASK_TYPES = {task_type for task_type, _ in _TASK_TYPE_PATTERNS} | {"unknown"}
+
+
+def classify_task_type(problem_text: str) -> str:
+    text = str(problem_text or "").strip().lower()
+    if not text:
+        return "unknown"
+    for task_type, markers in _TASK_TYPE_PATTERNS:
+        if any(marker in text for marker in markers):
+            return task_type
+    if re.search(r"\d\s*[+\-*/^]\s*\d", text) or "=?" in text.replace(" ", ""):
+        return "calculation"
+    return "unknown"
+
+
+def estimate_verifiability(domain: str, task_type: str) -> str:
+    domain = str(domain or "unknown").strip().lower()
+    task_type = str(task_type or "unknown").strip().lower()
+    if task_type in {"proof", "construction", "counterexample"}:
+        return "low"
+    if task_type == "choice":
+        return "medium"
+    if task_type == "calculation":
+        if domain in {"linear_algebra", "calculus", "numerical_analysis"}:
+            return "high"
+        if domain in {"ode", "optimization"}:
+            return "medium"
+        return "medium"
+    if task_type == "derivation":
+        return "medium"
+    return "low"
+
+
 def classify_problem(problem_text: str, metadata: Dict[str, Any] | None = None, limit: int = 4) -> Dict[str, Any]:
     metadata = metadata if isinstance(metadata, dict) else {}
     text = " ".join(str(part or "") for part in _iter_hint_parts(problem_text, metadata)).lower()
@@ -169,9 +226,13 @@ def classify_problem(problem_text: str, metadata: Dict[str, Any] | None = None, 
         key=lambda item: (-item[1], -BENCHMARK_DOMAIN_PRIORS.get(item[0], 0.0), item[0]),
     )
     domains = [domain for domain, _ in ranked[:limit]] or ["unknown"]
+    explicit_task_type = str(metadata.get("task_type") or "").strip().lower()
+    task_type = explicit_task_type if explicit_task_type in _TASK_TYPES else classify_task_type(problem_text)
     return {
         "primary_domain": domains[0],
         "domain_candidates": domains,
+        "task_type": task_type,
+        "verifiability": estimate_verifiability(domains[0], task_type),
         "scores": {domain: round(score, 3) for domain, score in ranked[:limit]},
         "priors": {domain: BENCHMARK_DOMAIN_PRIORS.get(domain, 0.0) for domain in domains},
     }

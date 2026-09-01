@@ -31,11 +31,25 @@ def strategies_for_domain(domain: str) -> List[str]:
     return list(STRATEGIES.get(domain, STRATEGIES["unknown"]))
 
 
-def choose_strategy_budget(task_type: str, max_candidates: int = 3) -> int:
+def choose_strategy_budget(
+    task_type: str,
+    max_candidates: int = 3,
+    verifiability: str = "medium",
+) -> int:
+    """Return an adaptive candidate count, capped by ``max_candidates``."""
+    max_candidates = max(1, int(max_candidates))
     if max_candidates <= 1:
         return 1
+    task_type = str(task_type or "unknown").strip().lower()
+    verifiability = str(verifiability or "medium").strip().lower()
+    if verifiability not in {"high", "medium", "low"}:
+        verifiability = "medium"
     if task_type in {"proof", "construction", "counterexample"}:
-        return min(max_candidates, 3)
+        return min(max_candidates, 2)
+    if task_type == "choice" or (task_type == "calculation" and verifiability == "high"):
+        return 1
     if task_type in {"calculation", "derivation"}:
+        return min(max_candidates, 2)
+    if task_type == "unknown" and verifiability == "low":
         return min(max_candidates, 3)
     return min(max_candidates, 2)

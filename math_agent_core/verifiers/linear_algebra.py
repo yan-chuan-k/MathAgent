@@ -20,6 +20,13 @@ MATRIX_TOOLS = {
 }
 
 
+# Candidate-requested matrix checks are useful supporting evidence, but they
+# must never be treated as an independent verification of the candidate's
+# final answer.  Keep this marker stable so downstream traces and tests can
+# identify the provenance of the evidence.
+_CANDIDATE_AUXILIARY_DETAILS = "Candidate-proposed matrix check; treated as supporting evidence only."
+
+
 def run_linear_algebra_verification(result: Dict[str, Any]) -> List[VerificationEvidence]:
     checks = _extract_matrix_checks(result)
     if not checks:
@@ -42,7 +49,16 @@ def run_linear_algebra_verification(result: Dict[str, Any]) -> List[Verification
             "arguments": check["arguments"],
             "claim_id": check.get("claim_id") or f"matrix_check_{index}",
         }
-        evidence.append(tool.run(payload))
+        item = tool.run(payload)
+        # MatrixTool is also used directly for trusted/system-inferred checks
+        # and therefore reports exact checks as decisive.  At this boundary,
+        # however, every check came from the candidate's requested_checks and
+        # is consequently auxiliary only.
+        item.is_decisive = False
+        details = str(item.details or "").strip()
+        if _CANDIDATE_AUXILIARY_DETAILS not in details:
+            item.details = f"{details} {_CANDIDATE_AUXILIARY_DETAILS}".strip()
+        evidence.append(item)
     return evidence
 
 

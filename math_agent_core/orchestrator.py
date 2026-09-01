@@ -46,9 +46,16 @@ class MathAgentOrchestrator:
         self.schema = self._load_schema(schema_path)
         self.acceptance_policy = AcceptancePolicy()
         self.last_log: Dict[str, Any] = {}
+        self._model_call_counts: Dict[str, int] = {
+            "solver": 0,
+            "planner": 0,
+            "critic": 0,
+            "finalizer": 0,
+        }
 
     def solve(self, problem: Any, metadata: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         started = time.time()
+        self._model_call_counts = {key: 0 for key in self._model_call_counts}
         problem = self._normalize_problem_input(problem, metadata)
         problem_id = str(problem.get("problem_id") or "UNKNOWN")
         problem_text = self._get_problem_text(problem)
@@ -72,16 +79,23 @@ class MathAgentOrchestrator:
             "timing": {"start_time": started, "end_time": None, "elapsed_seconds": 0.0},
             "errors": [],
         }
+        strategies = self._select_strategies(problem, problem_text, route_hint)
         solve_state = SolveState(
             problem=problem_text,
             route=route_hint,
             open_goals=[],
-            budget={"max_candidates": self.max_candidates, "max_retries": self.max_retries},
+            budget={
+                "max_candidates": self.max_candidates,
+                "initial_candidate_budget": len(strategies),
+                "max_retries": self.max_retries,
+            },
         )
 
-        strategies = self._select_strategies(problem, problem_text, route_hint)
         candidates: list[CandidateSolution] = []
-        for candidate_index, strategy in enumerate(strategies, start=1):
+        candidate_index = 0
+        while candidate_index < len(strategies):
+            strategy = strategies[candidate_index]
+            candidate_index += 1
             solve_state.current_strategy = strategy
             candidate = self._solve_candidate(
                 problem=problem,
@@ -97,7 +111,22 @@ class MathAgentOrchestrator:
             self._update_solve_state(solve_state, candidate)
             if candidate.assessment.overall_status == OverallStatus.SOLVED.value and candidate_index == 1:
                 break
+            if (
+                candidate_index == 1
+                and len(strategies) == 1
+                and self.max_candidates >= 2
+                and candidate.assessment.overall_status == OverallStatus.UNCERTAIN.value
+            ):
+                primary_domain = str(route_hint.get("primary_domain") or "unknown")
+                alternate = next(
+                    (item for item in strategies_for_domain(primary_domain) if item not in strategies),
+                    None,
+                )
+                if alternate:
+                    strategies.append(alternate)
+                    solve_state.budget["expanded_after_uncertain"] = True
 
+        self._review_conflicting_candidates(problem_text, candidates)
         candidates = self._cluster_and_rank_candidates(candidates)
         selected = candidates[0] if candidates else None
         result = selected.result if selected is not None else empty_result(problem_id, model=self.model, backend=self.backend)
@@ -119,12 +148,17 @@ class MathAgentOrchestrator:
             "primary_domain": (result.get("domain_candidates") or [result.get("problem_type") or route_hint["primary_domain"]])[0],
             "domain_candidates": result.get("domain_candidates") or route_hint["domain_candidates"],
             "local_route_hint": route_hint,
-            "task_type": result.get("task_type", "unknown"),
+            "task_type": result.get("task_type") or route_hint.get("task_type", "unknown"),
+            "verifiability": route_hint.get("verifiability", "low"),
             "needs_tool_verification": self.enable_tool_verify,
             "thinking_mode": self.thinking_mode,
             "candidate_count": len(candidates),
             "enable_critic": self.enable_critic,
             "enable_finalizer": self.enable_finalizer,
+        }
+        log["model_calls"] = {
+            **self._model_call_counts,
+            "total": sum(self._model_call_counts.values()),
         }
 
         elapsed = time.time() - started
@@ -143,6 +177,7 @@ class MathAgentOrchestrator:
         strategy: Optional[str] = None,
     ) -> str:
         messages = build_solver_messages(problem, problem_text, repair_context=repair_context, strategy=strategy)
+        self._increment_model_call("solver")
         try:
             return self.client.chat(
                 messages=messages,
@@ -165,20 +200,28 @@ class MathAgentOrchestrator:
     ) -> list[str]:
         primary_domain = route_hint.get("primary_domain") or "unknown"
         pool = strategies_for_domain(str(primary_domain))
-        budget = choose_strategy_budget(str(problem.get("task_type") or "unknown"), self.max_candidates)
-        selected = pool[:budget]
-        if self.max_candidates > 2:
-            planner_selected = self._call_planner(problem, problem_text, pool)
-            for strategy in planner_selected:
-                if strategy in pool and strategy not in selected:
-                    selected.append(strategy)
-                if len(selected) >= budget:
-                    break
+        task_type = str(route_hint.get("task_type") or problem.get("task_type") or "unknown")
+        verifiability = str(route_hint.get("verifiability") or "low")
+        budget = choose_strategy_budget(task_type, self.max_candidates, verifiability)
+        if budget <= 2:
+            return pool[:budget] or ["direct_computation"]
+
+        selected: list[str] = []
+        planner_selected = self._call_planner(problem, problem_text, pool)
+        for strategy in planner_selected:
+            if strategy in pool and strategy not in selected:
+                selected.append(strategy)
+        for strategy in pool:
+            if strategy not in selected:
+                selected.append(strategy)
+            if len(selected) >= budget:
+                break
         return selected[:budget] or ["direct_computation"]
 
     def _call_planner(self, problem: Dict[str, Any], problem_text: str, strategies: list[str]) -> list[str]:
         try:
             messages = build_planner_messages(problem, problem_text, strategies)
+            self._increment_model_call("planner")
             raw = self._chat(messages, temperature=0.0, max_tokens=1024)
             parsed = extract_json_from_text(raw)
             selected = parsed.get("selected_strategies")
@@ -224,7 +267,7 @@ class MathAgentOrchestrator:
                     started=started,
                     problem_text=problem_text,
                 )
-                if self.enable_critic and assessment.overall_status in {OverallStatus.SOLVED.value, OverallStatus.PROBABLE.value}:
+                if self.enable_critic and assessment.overall_status == OverallStatus.PROBABLE.value:
                     critic = self._call_critic(problem_text, result, assessment.evidence_dicts())
                     if critic:
                         self._apply_critic(result, assessment, critic)
@@ -296,6 +339,8 @@ class MathAgentOrchestrator:
             result["domain_candidates"] = route_hint["domain_candidates"]
         if result.get("problem_type") in ("", "unknown") and result.get("domain_candidates"):
             result["problem_type"] = str(result["domain_candidates"][0])
+        if result.get("task_type") in ("", "unknown") and route_hint.get("task_type") != "unknown":
+            result["task_type"] = str(route_hint["task_type"])
 
         validation = validate_result(result, self.schema)
         result["_meta"]["schema_valid"] = validation.valid
@@ -315,6 +360,7 @@ class MathAgentOrchestrator:
     def _call_critic(self, problem_text: str, result: Dict[str, Any], evidence: list[Dict[str, Any]]) -> Dict[str, Any] | None:
         try:
             messages = build_critic_messages(problem_text, result, evidence)
+            self._increment_model_call("critic")
             raw = self._chat(messages, temperature=0.0, max_tokens=1024)
             parsed = extract_json_from_text(raw)
             status = str(parsed.get("status") or "inconclusive")
@@ -333,6 +379,7 @@ class MathAgentOrchestrator:
     def _call_finalizer(self, problem_text: str, selected_candidate: Dict[str, Any]) -> str:
         try:
             messages = build_finalizer_messages(problem_text, selected_candidate)
+            self._increment_model_call("finalizer")
             raw = self._chat(messages, temperature=0.0, max_tokens=512)
             parsed = extract_json_from_text(raw)
             value = parsed.get("final_response")
@@ -341,6 +388,34 @@ class MathAgentOrchestrator:
         except Exception:
             return ""
         return ""
+
+    def _review_conflicting_candidates(self, problem_text: str, candidates: list[CandidateSolution]) -> None:
+        if not self.enable_critic or len(candidates) < 2:
+            return
+        if any(candidate.assessment.overall_status == OverallStatus.SOLVED.value for candidate in candidates):
+            return
+        if len({candidate.cluster_id for candidate in candidates if candidate.cluster_id}) < 2:
+            return
+
+        review_target = next(
+            (
+                candidate
+                for candidate in candidates
+                if candidate.critic is None
+                and candidate.assessment.overall_status in {OverallStatus.UNCERTAIN.value, OverallStatus.PROBABLE.value}
+            ),
+            None,
+        )
+        if review_target is None:
+            return
+        critic = self._call_critic(problem_text, review_target.result, review_target.assessment.evidence_dicts())
+        if critic is None:
+            return
+        review_target.critic = critic
+        self._apply_critic(review_target.result, review_target.assessment, critic)
+        validation = validate_result(review_target.result, self.schema)
+        review_target.assessment = self._reassess_with_current_evidence(review_target.result, validation)
+        review_target.evidence = list(review_target.assessment.evidence)
 
     def _apply_critic(self, result: Dict[str, Any], assessment: SolveAssessment, critic: Dict[str, Any]) -> None:
         assessment.evidence.append(self._critic_to_evidence(critic))
@@ -438,6 +513,11 @@ class MathAgentOrchestrator:
                 max_tokens=max_tokens,
             )
 
+    def _increment_model_call(self, role: str) -> None:
+        if role not in self._model_call_counts:
+            self._model_call_counts[role] = 0
+        self._model_call_counts[role] += 1
+
     def _normalize_problem_input(self, problem: Any, metadata: Optional[Dict[str, Any]]) -> Dict[str, Any]:
         if isinstance(problem, dict):
             normalized = dict(problem)
@@ -448,7 +528,7 @@ class MathAgentOrchestrator:
                 "problem_id": str(problem_id),
                 "problem_text": str(problem or ""),
             }
-            for key in ("subject", "type", "category"):
+            for key in ("subject", "type", "category", "task_type"):
                 if key in safe_metadata:
                     normalized[key] = safe_metadata[key]
         return normalized
@@ -591,7 +671,9 @@ class MathAgentOrchestrator:
     def _needs_repair(self, result: Dict[str, Any], assessment: SolveAssessment) -> bool:
         if not self.enable_repair:
             return False
-        return assessment.overall_status in {OverallStatus.INVALID.value, OverallStatus.UNCERTAIN.value}
+        if assessment.overall_status == OverallStatus.INVALID.value:
+            return True
+        return assessment.overall_status == OverallStatus.UNCERTAIN.value and self.max_candidates == 1
 
     def _build_repair_context(
         self,
