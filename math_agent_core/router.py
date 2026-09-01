@@ -227,6 +227,12 @@ def classify_problem(problem_text: str, metadata: Dict[str, Any] | None = None, 
     text = " ".join(str(part or "") for part in _iter_hint_parts(problem_text, metadata)).lower()
     scores: Dict[str, float] = {}
 
+    # Explicit metadata labels are trusted routing hints when they name a known domain.
+    for key in ("subject", "type", "category"):
+        value = str(metadata.get(key) or "").strip().lower()
+        if value in _DOMAIN_KEYWORDS:
+            scores[value] = scores.get(value, 0.0) + _SUBJECT_ALIAS_WEIGHT
+
     for alias, domain in _SUBJECT_ALIASES.items():
         if alias.lower() in text:
             scores[domain] = scores.get(domain, 0.0) + _SUBJECT_ALIAS_WEIGHT

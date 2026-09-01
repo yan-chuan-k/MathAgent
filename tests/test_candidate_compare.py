@@ -27,3 +27,13 @@ def test_candidate_disagreement():
     result = compare_candidate_answers(_candidate("1"), _candidate("2"))
     assert result["agreement"] is False
     assert result["agreement_type"] == "conflict"
+
+
+def test_candidate_pm_solution_set_agreement():
+    result = compare_candidate_answers(_candidate("x = 1 \\pm 2"), _candidate("x=3 or x=-1"))
+    assert result["agreement"] is True
+
+
+def test_candidate_pm_solution_set_agreement_without_latex():
+    result = compare_candidate_answers(_candidate("x = ±2"), _candidate("x=-2 or x=2"))
+    assert result["agreement"] is True

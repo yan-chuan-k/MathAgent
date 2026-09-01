@@ -44,3 +44,35 @@ def test_benchmark_reports_accuracy_and_model_calls_without_leaking_answer(tmp_p
     input_payload = user_content.split("INPUT_PAYLOAD_BEGIN", 1)[1].split("INPUT_PAYLOAD_END", 1)[0]
     assert "expected_answer" not in input_payload
     assert '"answer"' not in input_payload
+
+
+def test_benchmark_ground_truth_is_loaded_from_fixture(tmp_path):
+    input_path = tmp_path / "fixture.jsonl"
+    input_path.write_text(
+        json.dumps({"idx": "case", "problem": "1+1=?", "expected_answer": "2"}) + "\n",
+        encoding="utf-8",
+    )
+    items = diagnose_hard_cases.load_jsonl(input_path)
+    assert items[0]["expected_answer"] == "2"
+
+
+def test_benchmark_accepts_grading_field_as_fixture_truth(tmp_path):
+    input_path = tmp_path / "grading.jsonl"
+    input_path.write_text(
+        json.dumps({"idx": "case", "problem": "1+1=?", "grading": {"primary": "2"}}) + "\n",
+        encoding="utf-8",
+    )
+    summary = diagnose_hard_cases.evaluate(
+        input_file=input_path,
+        output_file=tmp_path / "summary.json",
+        use_mock=False,
+        run_agent=False,
+        thinking_mode=True,
+    )
+    assert summary["expected_answer_coverage"] == 1.0
+
+
+def test_required_claim_matcher_uses_canonical_aliases():
+    assert diagnose_hard_cases._match_required_claim("UNBIASED", "The estimator is unbiased.") is True
+    assert diagnose_hard_cases._match_required_claim("UNBIASED", "The estimator is biased.") is False
+    assert diagnose_hard_cases._match_required_claim("unknown claim", "anything") is None

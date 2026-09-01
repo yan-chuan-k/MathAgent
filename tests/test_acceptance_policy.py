@@ -11,6 +11,7 @@ def _evidence(status, level, decisive, method="check", verifier="tool"):
         details="details",
         verification_level=level,
         is_decisive=decisive,
+        claim_scope="full_answer",
     )
 
 
@@ -26,6 +27,31 @@ def test_exact_symbolic_pass_accepts_solved():
 
     assert decision.overall_status == "solved"
     assert decision.answer_verified is True
+
+
+def test_subclaim_pass_does_not_accept_solved():
+    decision = AcceptancePolicy().decide(
+        schema_valid=True,
+        content_complete=True,
+        task_type="calculation",
+        answer_type="numeric",
+        model_verification_pass=False,
+        evidence=[_evidence(EvidenceStatus.PASS.value, VerificationLevel.EXACT_SYMBOLIC.value, True, verifier="tool")],
+    )
+    # The helper defaults to full_answer; explicitly exercise the scope gate.
+    decision = AcceptancePolicy().decide(
+        schema_valid=True,
+        content_complete=True,
+        task_type="calculation",
+        answer_type="numeric",
+        model_verification_pass=False,
+        evidence=[VerificationEvidence(
+            verifier="tool", claim_id="c", status="pass", method="check", details="details",
+            verification_level=VerificationLevel.EXACT_SYMBOLIC.value, is_decisive=True, claim_scope="subclaim",
+        )],
+    )
+    assert decision.answer_verified is False
+    assert decision.overall_status != "solved"
 
 
 def test_decisive_tool_fail_rejects_even_when_model_passes():

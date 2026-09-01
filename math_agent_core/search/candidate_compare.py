@@ -27,7 +27,7 @@ def compare_candidate_answers(candidate_a: Any, candidate_b: Any) -> Dict[str, A
     if symbolic is True:
         return {"agreement": True, "agreement_type": "symbolic", "confidence": 0.97}
 
-    if _solution_set_equivalent(left, right):
+    if _solution_set_equivalent_pm(left, right) or _solution_set_equivalent(left, right):
         return {"agreement": True, "agreement_type": "solution_set", "confidence": 0.96}
 
     if left_norm and left_norm == right_norm:
@@ -102,7 +102,62 @@ def _canonicalize_math_text(text: str) -> str:
     text = re.sub(r"\\frac\s*\{([^{}]+)\}\s*\{([^{}]+)\}", r"(\1)/(\2)", text)
     text = re.sub(r"\\sqrt\s*\{([^{}]+)\}", r"sqrt(\1)", text)
     text = text.replace("\\left", "").replace("\\right", "")
-    return text.replace("\\pm", "+/-")
+    return text.replace("\\pm", "+/-").replace("±", "+/-")
+
+
+def _solution_set_equivalent_pm(left: str, right: str) -> bool:
+    def expand(value: str):
+        match = re.fullmatch(r"\s*([A-Za-z])\s*=\s*(.*?)\s*", value or "")
+        if not match:
+            return None
+        rhs = match.group(2).replace(" ", "")
+        if "+/-" not in rhs:
+            return None
+        base, delta = rhs.split("+/-", 1)
+        if not delta:
+            return None
+        try:
+            import sympy as sp
+            from sympy.parsing.sympy_parser import (
+                convert_xor,
+                implicit_multiplication_application,
+                parse_expr,
+                standard_transformations,
+            )
+            transforms = standard_transformations + (implicit_multiplication_application, convert_xor)
+            globals_dict = dict(sp.__dict__)
+            globals_dict["__builtins__"] = {}
+            symbols = {name: sp.Symbol(name) for name in "abcdefghijklmnopqrstuvwxyz"}
+            base_expr = parse_expr(base or "0", local_dict=symbols, global_dict=globals_dict, transformations=transforms)
+            delta_expr = parse_expr(delta, local_dict=symbols, global_dict=globals_dict, transformations=transforms)
+            return sorted({normalize_answer_for_comparison(str(sp.simplify(base_expr + sign * delta_expr))) for sign in (1, -1)})
+        except Exception:
+            return None
+
+    left_values, right_values = expand(left), expand(right)
+    if left_values is None and right_values is None:
+        return False
+    if left_values is None:
+        left_values = _ordinary_assignment_values(left)
+    if right_values is None:
+        right_values = _ordinary_assignment_values(right)
+    if left_values is None or right_values is None:
+        return False
+    return left_values == right_values
+
+
+def _ordinary_assignment_values(value: str) -> list[str] | None:
+    chunks = re.split(r"\s*(?:or|或|[,;])\s*", value or "", flags=re.IGNORECASE)
+    values: list[str] = []
+    for chunk in chunks:
+        match = re.fullmatch(r"\s*[A-Za-z]\s*=\s*(.*?)\s*", chunk)
+        if not match:
+            return None
+        rhs = match.group(1).strip()
+        if not rhs or "+/-" in rhs:
+            return None
+        values.append(normalize_answer_for_comparison(rhs))
+    return sorted(values) if values else None
 
 
 def _solution_set_equivalent(left: str, right: str) -> bool:

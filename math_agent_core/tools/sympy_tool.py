@@ -140,7 +140,7 @@ class SafeSympyTool:
                 inferred.append(
                     {
                         "tool": "equation_solution_set",
-                        "arguments": {"equation": equation, "variable": variable, "answer": answer},
+                        "arguments": {"equation": equation, "variable": variable, "answer": answer, "domain": _infer_solution_domain(problem_text)},
                     }
                 )
 
@@ -231,7 +231,16 @@ class SafeSympyTool:
         expression = _parse_expr(left_text) - _parse_expr(right_text)
         if expression.has(sp.Derivative) or len(str(expression)) > 240:
             raise ValueError("equation is outside conservative solution-set scope")
-        expected = sp.solveset(expression, symbol, domain=sp.S.Complexes)
+        domain_name = str(arguments.get("domain") or "complex").lower()
+        domain = _solution_domain(domain_name)
+        if domain is None:
+            return VerificationEvidence(
+                verifier=self.verifier_name, claim_id=claim_id,
+                status=EvidenceStatus.INCONCLUSIVE.value, method="equation_solution_set",
+                details="Could not safely identify the equation domain.",
+                verification_level=VerificationLevel.EXACT_SYMBOLIC.value, is_decisive=False,
+            )
+        expected = sp.solveset(expression, symbol, domain=domain)
         if not isinstance(expected, sp.FiniteSet):
             return VerificationEvidence(
                 verifier=self.verifier_name, claim_id=claim_id,
@@ -239,9 +248,7 @@ class SafeSympyTool:
                 details="Safe solveset did not return a finite solution set.",
                 verification_level=VerificationLevel.EXACT_SYMBOLIC.value, is_decisive=False,
             )
-        candidate_values = []
-        for value in re.findall(r"(?:[A-Za-z]\s*=\s*)?([+\-]?\d+(?:/\d+)?(?:\.\d+)?)", answer):
-            candidate_values.append(_parse_expr(value))
+        candidate_values = _extract_solution_values(answer)
         if not candidate_values:
             return VerificationEvidence(
                 verifier=self.verifier_name, claim_id=claim_id,
@@ -442,6 +449,60 @@ def _extract_answer_values(answer: str) -> List[str]:
     if re.fullmatch(r"\s*[+\-]?\d+(?:/\d+)?(?:\.\d+)?\s*", text):
         return [text.strip()]
     return re.findall(r"[+\-]?\d+(?:/\d+)?(?:\.\d+)?", text)[:4]
+
+
+def _infer_solution_domain(problem_text: str) -> str:
+    text = str(problem_text or "").lower()
+    if re.search(r"positive real|positive|x\s*>\s*0|正实", text):
+        return "positive_real"
+    if re.search(r"nonnegative|x\s*>=\s*0|非负", text):
+        return "nonnegative"
+    if re.search(r"real numbers?|over the reals?|实数", text):
+        return "real"
+    if re.search(r"integers?|integer|整数", text):
+        return "integer"
+    if re.search(r"algebraic|irrational|rational\s+only|modulo|mod\s+", text):
+        return "unknown"
+    if re.search(r"complex|complex numbers?|复数", text):
+        return "complex"
+    return "complex"
+
+
+def _solution_domain(name: str):
+    import sympy as sp
+
+    return {
+        "complex": sp.S.Complexes,
+        "real": sp.S.Reals,
+        "positive_real": sp.Interval.open(0, sp.oo),
+        "nonnegative": sp.Interval(0, sp.oo),
+        "integer": sp.S.Integers,
+    }.get(name)
+
+
+def _extract_solution_values(answer: str) -> list[Any]:
+    import sympy as sp
+
+    text = str(answer or "")
+    bound = re.findall(r"\b[A-Za-z]\s*=\s*([^,;]+?)(?=\s+(?:and|or|或)\b|[,;]|$)", text, flags=re.IGNORECASE)
+    if bound:
+        values = []
+        for item in bound:
+            item = item.strip().rstrip(".")
+            try:
+                values.append(_parse_expr(item))
+            except Exception:
+                return []
+        return values
+    # Only accept compact set/list/or formats without explanatory prose.
+    compact = text.strip().strip("{}[]")
+    if re.search(r"[A-Za-z]{2,}", compact) and not re.fullmatch(r"(?:x\s*=\s*)?[+\-]?\d+(?:\s*(?:or|或|,)\s*[+\-]?\d+)*", compact, flags=re.IGNORECASE):
+        return []
+    tokens = re.findall(r"[+\-]?\d+(?:/\d+)?(?:\.\d+)?", compact)
+    try:
+        return [_parse_expr(token) for token in tokens]
+    except Exception:
+        return []
 
 
 def _infer_variable(problem_text: str, answer: str) -> str:

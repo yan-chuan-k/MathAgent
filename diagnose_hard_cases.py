@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 from pathlib import Path
 from typing import Any, Dict, Iterable, List
@@ -15,28 +16,6 @@ from user_agent import ReasoningAgent
 
 
 BASE_DIR = Path(__file__).resolve().parent
-
-HARD_GROUND_TRUTH = {
-    "hard_discrete_math": "132",
-    "hard_numerical_analysis": "x_{n+1}=1/2*(x_n+2/x_n), order 2",
-    "hard_measure_integration": "1/2",
-    "hard_differential_geometry": "K = 1",
-    "hard_probability": "1/(lambda+mu)",
-    "hard_abstract_algebra": "72",
-    "hard_stochastic_process": "e^(-2*lambda)*(2*lambda)^2/2!",
-    "hard_complex_analysis": "2*pi*(e^(-1)-e)",
-    "hard_ode": "y=(x+C)e^(-x)",
-    "hard_statistics": "sample mean",
-    "hard_functional_analysis": "Cauchy-Schwarz; equality iff linearly dependent",
-    "hard_linear_regression": "beta_hat=(X^T X)^(-1)X^T y",
-    "hard_pde": "u(x,t)=e^(-pi^2*t)sin(pi*x)",
-    "hard_advanced_math": "0 if dual norm <= 1, +infinity otherwise",
-    "hard_linear_algebra": "(t-2)^2",
-    "hard_optimization": "(x,y)=(2,0), optimum 6",
-    "hard_real_analysis": "uniformly convergent",
-    "hard_topology": "compact",
-}
-
 
 class CountingClient:
     def __init__(self, client: Any):
@@ -59,8 +38,6 @@ def load_jsonl(path: Path) -> List[Dict[str, Any]]:
             line = line.strip()
             if line:
                 item = json.loads(line)
-                if item.get("idx") in HARD_GROUND_TRUTH and "expected_answer" not in item:
-                    item["expected_answer"] = HARD_GROUND_TRUTH[item["idx"]]
                 items.append(item)
     return items
 
@@ -112,7 +89,7 @@ def evaluate(
         metadata = {
             key: value
             for key, value in item.items()
-            if key not in {"problem", "answer", "expected_answer", "answer_hint"}
+            if key not in {"problem", "answer", "expected_answer", "grading", "answer_hint"}
         }
         route = classify_problem(problem, metadata)
         expected = str(item.get("expected_domain", ""))
@@ -147,7 +124,9 @@ def evaluate(
             targeted_repairs += int(metrics.get("targeted_repair_triggered", 0) or 0)
         model_calls = (client.total_calls - calls_before) if client is not None else 0
         # Ground truth is grading-only and is never included in solver metadata.
-        expected_answer = item.get("expected_answer", item.get("answer"))
+        expected_answer = item.get("expected_answer")
+        if expected_answer is None:
+            expected_answer = item.get("grading", item.get("answer"))
         expected_answer_count += int(expected_answer is not None)
         answer_ok = None
         if agent is not None and expected_answer is not None:
@@ -156,12 +135,13 @@ def evaluate(
             answer_ok = answers_equivalent(final_response, primary_expected)
             primary_evaluated += 1
             primary_correct += int(answer_ok)
-            claim_results = [claim.lower() in final_response.lower() for claim in required_claims]
-            if required_claims:
-                claims_evaluated += len(required_claims)
-                claims_correct += sum(claim_results)
+            claim_results = [_match_required_claim(claim, final_response) for claim in required_claims]
+            graded_claims = [item for item in claim_results if item is not None]
+            if graded_claims:
+                claims_evaluated += len(graded_claims)
+                claims_correct += sum(graded_claims)
                 full_evaluated += 1
-                full_correct += int(answer_ok and all(claim_results))
+                full_correct += int(answer_ok and len(graded_claims) == len(claim_results) and all(graded_claims))
             if answer_ok:
                 answer_correct += 1
 
@@ -218,12 +198,46 @@ def evaluate(
 
 def _expected_spec(value: Any) -> tuple[str, list[str]]:
     if isinstance(value, dict):
-        primary = value.get("primary", value.get("answer", ""))
-        claims = value.get("required_claims", [])
+        primary = value.get("primary", value.get("answer", value.get("expected_answer", "")))
+        claims = value.get("required_claims", value.get("claims", []))
         if not isinstance(claims, list):
             claims = [claims]
         return str(primary), [str(item) for item in claims if str(item).strip()]
     return str(value), []
+
+
+def _match_required_claim(claim: str, response: str) -> bool | None:
+    """Return True/False for known canonical claims, None when ungradable."""
+    claim_text = str(claim or "").strip()
+    text = str(response or "").lower()
+    compact = re.sub(r"[^a-z0-9]+", "", text)
+    key = re.sub(r"[^a-z0-9]+", "", claim_text.lower())
+    patterns = {
+        "unbiased": ("unbiased", "unbiasedestimator", "unbiasedness", "无偏"),
+        "dctnotapplicable": (
+            "dctnotapplicable", "dominatedconvergencedoesnotapply",
+            "dominatedconvergencenotapplicable", "dctdoesnotapply", "dctnotapply",
+        ),
+        "quadraticconvergence": ("quadraticconvergence", "quadraticrate", "order2", "quadratic"),
+        "weierstrassmtest": ("weierstrassmtest", "weierstrassmtest", "mtest", "mtestcriterion"),
+        "varbetahatsigma2xtx1": (
+            "varbetahatsigma2xtx1", "covarianceofbetahat", "varianceofbetahat",
+            "sigma2xtx1", "sigma^2*(x^tx)^(-1)".replace("^", ""),
+        ),
+        "newtoniteration": ("newtoniteration", "newtonsmethoditeration", "xnext", "x_{n+1}"),
+    }
+    aliases = patterns.get(key)
+    if aliases is None:
+        return None
+    for alias in aliases:
+        alias_text = str(alias).lower()
+        if re.search(r"[^a-z0-9]", alias_text):
+            if alias_text in text:
+                return True
+        else:
+            if alias_text in compact:
+                return True
+    return False
 
 
 def print_summary(summary: Dict[str, Any]) -> None:

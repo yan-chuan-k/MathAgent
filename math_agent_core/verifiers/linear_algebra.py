@@ -79,7 +79,7 @@ def run_system_inferred_matrix_verification(problem_text: str, answer: str) -> L
     except Exception:
         return []
     normalized_answer = str(answer or "").strip()
-    if not normalized_answer or any(ch.isalpha() for ch in normalized_answer):
+    if not normalized_answer:
         return []
     lower = text.lower()
     targets = []
@@ -93,7 +93,10 @@ def run_system_inferred_matrix_verification(problem_text: str, answer: str) -> L
     if len(targets) > 1:
         missing = [target for target in targets if target not in lower]
         # A bare scalar cannot establish a multi-target response.
-        mentioned = [target for target in targets if re.search(rf"{target}\s*[:=]", lower)]
+        answer_lower = normalized_answer.lower()
+        mentioned = [target for target in targets if re.search(rf"{target}\s*[:=]", answer_lower)]
+        if "determinant" in targets and re.search(r"\bdet\s*[:=]", answer_lower):
+            mentioned.append("determinant")
         if len(mentioned) < len(targets):
             evidence.append(VerificationEvidence(
                 verifier="matrix_tool", claim_id="system_matrix_targets",
@@ -105,7 +108,7 @@ def run_system_inferred_matrix_verification(problem_text: str, answer: str) -> L
             return evidence
     all_pass = True
     if "determinant" in targets:
-        expected = _extract_labeled_number(answer, "determinant") if len(targets) > 1 else normalized_answer
+        expected = _extract_labeled_number(answer, "determinant") if (len(targets) > 1 or re.search(r"[A-Za-z]", normalized_answer)) else normalized_answer
         if expected:
             item = MatrixTool().run({"tool": "matrix_determinant", "arguments": {"matrix": matrix, "expected": expected}, "claim_id": "system_matrix_determinant"})
             item.details = "System-inferred matrix determinant check; exact verification."
@@ -138,7 +141,8 @@ def run_system_inferred_matrix_verification(problem_text: str, answer: str) -> L
 
 
 def _extract_labeled_number(answer: str, label: str) -> str:
-    match = re.search(rf"{label}\s*[:=]\s*([+\-]?\d+(?:\.\d+)?)", str(answer or ""), flags=re.IGNORECASE)
+    aliases = "(?:determinant|det)" if label == "determinant" else re.escape(label)
+    match = re.search(rf"{aliases}\s*[:=]\s*([+\-]?\d+(?:\.\d+)?)", str(answer or ""), flags=re.IGNORECASE)
     return match.group(1) if match else ""
 
 

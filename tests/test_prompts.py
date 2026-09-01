@@ -1,4 +1,4 @@
-from math_agent_core.prompts import build_solver_messages
+from math_agent_core.prompts import build_solver_messages, build_reviser_messages
 from math_agent_core.prompts import OUTPUT_CONTRACT
 import json
 
@@ -61,6 +61,28 @@ def test_solver_profiles_are_distinct():
     assert direct != independent
     assert "independently" in independent.lower()
     assert "repair" not in direct.lower() or "solver_profile" in verification.lower()
+
+
+def test_targeted_repair_context_reaches_solver_prompt():
+    messages = build_reviser_messages(
+        {"problem_id": "repair", "_route_hint": {"primary_domain": "unknown", "domain_candidates": []}},
+        "Solve the equation.",
+        {"strategy": "direct_computation", "final_answer": {"answer": "x=2"}},
+        {
+            "disagreement": "The second root was omitted.",
+            "candidate_a_issue": "Incomplete solution set.",
+            "candidate_b_issue": "None.",
+            "preferred_candidate": "B",
+            "repair_candidate": "A",
+            "repair_target": "Recompute the complete root set.",
+            "confidence": 0.9,
+        },
+        [],
+    )
+    prompt = messages[1]["content"]
+    assert "Recompute the complete root set." in prompt
+    assert "disputed_candidate" in prompt
+    assert "candidate_a_issue" in prompt
 
 
 def test_output_contract_matches_schema_public_fields():

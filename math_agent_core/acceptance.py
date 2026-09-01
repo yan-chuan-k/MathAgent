@@ -148,7 +148,7 @@ class AcceptancePolicy:
         return any(
             item.status == EvidenceStatus.PASS.value
             and item.is_decisive
-            and (item.claim_scope == "full_answer" or getattr(item, "verifier", "") == "tool")
+            and item.claim_scope == "full_answer"
             and item.verification_level in DECISIVE_PASS_LEVELS
             for item in evidence
         )
