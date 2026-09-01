@@ -16,7 +16,7 @@ from .schema import empty_result
 from .search import choose_strategy_budget, compare_candidate_answers, rank_candidates, strategies_for_domain
 from .state import EvidenceStatus, FailureKind, OverallStatus, SolveAssessment, SolveState, VerificationEvidence, VerificationLevel
 from .tools import run_sympy_verification
-from .verifiers import check_completeness, run_linear_algebra_verification
+from .verifiers import check_completeness, run_linear_algebra_verification, run_system_inferred_matrix_verification
 
 
 class MathAgentOrchestrator:
@@ -32,6 +32,8 @@ class MathAgentOrchestrator:
         max_candidates: int = 1,
         enable_critic: bool = True,
         enable_finalizer: bool = True,
+        solver_max_tokens: int = 8192,
+        solver_temperature: float = 0.1,
     ):
         self.client = client
         self.max_retries = max_retries
@@ -41,6 +43,8 @@ class MathAgentOrchestrator:
         self.max_candidates = max(1, int(max_candidates))
         self.enable_critic = enable_critic
         self.enable_finalizer = enable_finalizer
+        self.solver_max_tokens = max(1, int(solver_max_tokens))
+        self.solver_temperature = float(solver_temperature)
         self.backend = self._resolve_backend(backend)
         self.model = getattr(client, "model", "intern-s2-preview-397b")
         self.schema = self._load_schema(schema_path)
@@ -203,15 +207,15 @@ class MathAgentOrchestrator:
         try:
             return self.client.chat(
                 messages=messages,
-                temperature=0.1,
-                max_tokens=8192,
+                temperature=self.solver_temperature,
+                max_tokens=self.solver_max_tokens,
                 thinking_mode=self.thinking_mode,
             )
         except TypeError:
             return self.client.chat(
                 messages=messages,
-                temperature=0.1,
-                max_tokens=8192,
+                temperature=self.solver_temperature,
+                max_tokens=self.solver_max_tokens,
             )
 
     def _select_strategies(
@@ -415,6 +419,7 @@ class MathAgentOrchestrator:
                 "candidate_a_issue": str(parsed.get("candidate_a_issue") or "")[:500],
                 "candidate_b_issue": str(parsed.get("candidate_b_issue") or "")[:500],
                 "preferred_candidate": str(parsed.get("preferred_candidate") or "uncertain"),
+                "repair_candidate": str(parsed.get("repair_candidate") or "none"),
                 "repair_target": str(parsed.get("repair_target") or parsed.get("suggested_repair") or "")[:500],
                 "confidence": min(1.0, max(0.0, float(parsed.get("confidence", 0.0) or 0.0))),
             }
@@ -462,11 +467,20 @@ class MathAgentOrchestrator:
         self._run_metrics["critic_triggered"] += 1
         comparison["critic"] = critic
         preferred = critic.get("preferred_candidate")
-        target = candidates[0] if preferred == "A" else candidates[1] if preferred == "B" else candidates[0]
-        if target is not None:
-            target.critic = critic
+        for index, candidate in enumerate(candidates[:2]):
+            candidate.critic = critic
+            candidate.judge_preference_score = 0.0
+            if float(critic.get("confidence", 0.0) or 0.0) >= 0.8:
+                if preferred == ("A" if index == 0 else "B"):
+                    candidate.judge_preference_score = 12.0
+                elif preferred in {"A", "B"}:
+                    candidate.judge_preference_score = -12.0
+        repair_candidate = critic.get("repair_candidate", "none")
+        target = candidates[0] if repair_candidate == "A" else candidates[1] if repair_candidate == "B" else None
         repair_target = critic.get("repair_target")
-        if repair_target and problem is not None and self.enable_repair and self.max_retries > 0:
+        if repair_target and problem is not None and self.enable_repair and self.max_retries > 0 and (
+            repair_candidate in {"A", "B"} or preferred == "uncertain"
+        ):
             self._run_metrics["targeted_repair_triggered"] += 1
             self._run_metrics["repair_triggered"] += 1
             comparison["targeted_repair"] = repair_target
@@ -474,6 +488,9 @@ class MathAgentOrchestrator:
                 "failure_kind": FailureKind.LOW_CONSENSUS.value,
                 "failure_details": critic.get("disagreement", "candidate conflict"),
                 "repair_target": repair_target,
+                "disputed_candidate": target.result if target is not None else {},
+                "critic_judgment": critic,
+                "evidence": candidates[0].assessment.evidence_dicts() + candidates[1].assessment.evidence_dicts(),
                 "instruction": "Recompute only the disputed step and dependent final answer.",
             }
             repair_candidate = self._solve_candidate(
@@ -489,6 +506,9 @@ class MathAgentOrchestrator:
                 initial_repair_context=repair_context,
             )
             if target is not None:
+                repair_candidate.critic = critic
+                if preferred in {"A", "B"}:
+                    repair_candidate.judge_preference_score = 12.0 if preferred == ("A" if target is candidates[0] else "B") else -12.0
                 candidates[candidates.index(target)] = repair_candidate
                 post_repair = compare_candidate_answers(candidates[0].result, candidates[1].result)
                 comparison["post_repair_comparison"] = post_repair
@@ -639,6 +659,10 @@ class MathAgentOrchestrator:
         if isinstance(final_answer, dict):
             answer = str(final_answer.get("answer") or "")
         evidence: list[VerificationEvidence] = []
+        try:
+            evidence.extend(run_system_inferred_matrix_verification(problem_text, answer))
+        except Exception:
+            pass
         try:
             evidence.extend(run_sympy_verification(problem_text=problem_text, answer=answer, result=result))
         except Exception as exc:

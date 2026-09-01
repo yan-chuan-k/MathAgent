@@ -12,8 +12,8 @@ def compare_candidate_answers(candidate_a: Any, candidate_b: Any) -> Dict[str, A
     """Compare candidate final answers without consulting an LLM."""
     left = _extract_answer(candidate_a)
     right = _extract_answer(candidate_b)
-    left = normalize_final_response(left)
-    right = normalize_final_response(right)
+    left = _canonicalize_math_text(normalize_final_response(left))
+    right = _canonicalize_math_text(normalize_final_response(right))
     left_norm = normalize_answer_for_comparison(left)
     right_norm = normalize_answer_for_comparison(right)
 
@@ -26,6 +26,9 @@ def compare_candidate_answers(candidate_a: Any, candidate_b: Any) -> Dict[str, A
     symbolic = _symbolic_equivalent(left, right)
     if symbolic is True:
         return {"agreement": True, "agreement_type": "symbolic", "confidence": 0.97}
+
+    if _solution_set_equivalent(left, right):
+        return {"agreement": True, "agreement_type": "solution_set", "confidence": 0.96}
 
     if left_norm and left_norm == right_norm:
         return {"agreement": True, "agreement_type": "normalized_exact", "confidence": 0.98}
@@ -93,3 +96,19 @@ def _safe_expression(value: str) -> bool:
 
 
 compare_candidates = compare_candidate_answers
+
+
+def _canonicalize_math_text(text: str) -> str:
+    text = re.sub(r"\\frac\s*\{([^{}]+)\}\s*\{([^{}]+)\}", r"(\1)/(\2)", text)
+    text = re.sub(r"\\sqrt\s*\{([^{}]+)\}", r"sqrt(\1)", text)
+    text = text.replace("\\left", "").replace("\\right", "")
+    return text.replace("\\pm", "+/-")
+
+
+def _solution_set_equivalent(left: str, right: str) -> bool:
+    def parts(value: str):
+        chunks = re.split(r"\s+(?:or|或)\s+|\s*[,;]\s*", value, flags=re.IGNORECASE)
+        return sorted(normalize_answer_for_comparison(chunk) for chunk in chunks if "=" in chunk)
+
+    left_parts, right_parts = parts(left), parts(right)
+    return bool(left_parts and left_parts == right_parts)

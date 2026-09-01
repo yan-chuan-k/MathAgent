@@ -195,6 +195,7 @@ JSON REQUIREMENTS
 
 OUTPUT_CONTRACT = {
     "problem_id": "string",
+    "problem_type": "canonical mathematical domain",
     "task_type": list(TASK_TYPES),
     "domain_candidates": ["canonical domain string"],
     "reasoning_plan": ["short statement of theorem, formula, algorithm, or invariant"],
@@ -205,12 +206,17 @@ OUTPUT_CONTRACT = {
     },
     "verification": {
         "verification_result": "pass or uncertain",
+        "verification_process": "concise description of deterministic or theorem checks",
         "checks": [
             "specific substitution, hypothesis check, edge-case check, normalization check, or independent calculation"
         ],
         "confidence": 0.0,
     },
+    "requested_checks": [
+        {"tool": "symbolic_equivalence|equation_solution|numeric_arithmetic|matrix_determinant", "arguments": {}, "claim_id": "optional"}
+    ],
     "assumptions": ["essential assumption not explicit in the problem; otherwise empty"],
+    "learning_hints": ["optional concise reusable hint"],
 }
 
 
@@ -361,7 +367,7 @@ def build_critic_messages(
                 "content": (
                     f"{json.dumps(payload, ensure_ascii=False, indent=2)}\n"
                     'Return exactly one JSON object with keys: disagreement, candidate_a_issue, candidate_b_issue, '
-                    'preferred_candidate (A|B|uncertain), repair_target, confidence.'
+                    'preferred_candidate (A|B|uncertain), repair_candidate (A|B|none), repair_target, confidence.'
                 ),
             },
         ]

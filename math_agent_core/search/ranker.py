@@ -42,6 +42,7 @@ def _score_candidate(candidate: CandidateSolution, cluster_size: int) -> float:
     if meta.get("proof_verified"):
         score += 15.0
     score += min(cluster_size - 1, 3) * 5.0
+    score += float(getattr(candidate, "judge_preference_score", 0.0) or 0.0)
 
     critic = candidate.critic or {}
     if critic.get("status") == "pass":

@@ -359,11 +359,18 @@ def _extract_structured_tool_checks(result: Dict[str, Any]) -> List[Dict[str, An
 
 
 def _extract_first_equation(text: str) -> Optional[str]:
-    candidates = re.findall(r"([A-Za-z0-9+\-*/^().\s]+=[A-Za-z0-9+\-*/^().\s]+)", text)
-    for candidate in candidates:
-        cleaned = candidate.strip(" .;:,")
-        if len(cleaned) >= 3 and any(char.isalpha() for char in cleaned):
-            return cleaned
+    # Match mathematical bodies only; do not absorb natural-language prefixes
+    # ("Solve", "Find x if") or suffixes ("for x").
+    pattern = re.compile(
+        r"(?<![A-Za-z0-9_])"
+        r"([A-Za-z0-9_().]+(?:\s*[+\-*/^]\s*[A-Za-z0-9_().]+)*)"
+        r"\s*=\s*"
+        r"([A-Za-z0-9_().]+)"
+    )
+    for match in pattern.finditer(str(text or "")):
+        left, right = match.group(1).strip(), match.group(2).strip().rstrip(".,;:!?\u3002")
+        if len(left) >= 1 and len(right) >= 1 and (any(ch.isalpha() for ch in left) or any(ch.isalpha() for ch in right)):
+            return f"{left}={right}"
     return None
 
 
@@ -398,13 +405,15 @@ def _infer_variable(problem_text: str, answer: str) -> str:
 
 
 def _extract_simple_arithmetic(text: str) -> Optional[str]:
-    cleaned = str(text or "")
-    cleaned = re.sub(r"=\s*\?", " ", cleaned)
-    cleaned = cleaned.replace("?", " ")
-    match = re.search(r"(?<![A-Za-z])([+\-]?\d+(?:/\d+)?(?:\.\d+)?(?:\s*[+\-*/^]\s*[+\-]?\d+(?:/\d+)?(?:\.\d+)?)+)", cleaned)
-    if not match:
+    cleaned = str(text or "").strip()
+    cleaned = re.sub(r"^(?:compute|calculate|evaluate|\u8ba1\u7b97|\u6c42\u503c)\s*", "", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"=\s*\?\s*$", "", cleaned)
+    cleaned = cleaned.rstrip(" .;:!?\u3002")
+    if "?" in cleaned or re.search(r"[A-Za-z_]", cleaned):
         return None
-    return match.group(1)
+    if not re.fullmatch(r"[0-9()+\-*/^.\s]+", cleaned) or not re.search(r"[+\-*/^]", cleaned):
+        return None
+    return cleaned
 
 
 def _extract_single_number(text: str) -> Optional[str]:

@@ -1,2 +1,2 @@
-{"idx": 0, "problem": "1+1=?", "subject": "arithmetic"}
-{"idx": 1, "problem": "Let A=[[1,2],[3,4]]. Find det(A).", "subject": "linear_algebra"}
+{"idx": 0, "problem": "1+1=?", "subject": "arithmetic", "expected_answer": "2", "expected_domain": "unknown"}
+{"idx": 1, "problem": "Let A=[[1,2],[3,4]]. Find det(A).", "subject": "linear_algebra", "expected_answer": "-2", "expected_domain": "linear_algebra"}

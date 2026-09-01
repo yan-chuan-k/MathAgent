@@ -18,6 +18,7 @@ class CandidateSolution:
     cluster_id: str = ""
     score: float = 0.0
     profile: str = "direct"
+    judge_preference_score: float = 0.0
 
     def to_trace_dict(self) -> Dict[str, Any]:
         meta = self.result.get("_meta", {}) if isinstance(self.result, dict) else {}
@@ -31,4 +32,5 @@ class CandidateSolution:
             "score": round(self.score, 4),
             "cluster_id": self.cluster_id,
             "critic_status": (self.critic or {}).get("status"),
+            "judge_preference_score": round(self.judge_preference_score, 4),
         }

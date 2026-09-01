@@ -115,7 +115,9 @@ def evaluate(
             repair_triggers += int(metrics.get("repair_triggered", 0) or 0)
             targeted_repairs += int(metrics.get("targeted_repair_triggered", 0) or 0)
         model_calls = (client.total_calls - calls_before) if client is not None else 0
-        expected_answer = item.get("expected_answer", item.get("answer"))
+        # Grading-only fallback: answer_hint is never included in solver metadata
+        # and is used only when a fixture lacks an explicit expected_answer.
+        expected_answer = item.get("expected_answer", item.get("answer", item.get("answer_hint")))
         answer_ok = None
         if agent is not None and expected_answer is not None:
             answer_evaluated += 1

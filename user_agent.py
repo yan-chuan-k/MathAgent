@@ -28,6 +28,8 @@ class ReasoningAgent:
                 backend="simple",
                 thinking_mode=self.thinking_mode,
                 max_candidates=self.max_candidates,
+                solver_max_tokens=self.max_tokens,
+                solver_temperature=self.temperature,
                 enable_critic=bool(kwargs.get("enable_critic", True)),
                 enable_finalizer=bool(kwargs.get("enable_finalizer", False)),
             )

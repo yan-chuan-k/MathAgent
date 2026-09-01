@@ -189,3 +189,49 @@ def test_finalizer_formats_selected_candidate_without_changing_verification():
     assert result["final_response"] == "2"
     assert result["_meta"]["overall_status"] == "solved"
     assert result["_meta"]["answer_verified"] is True
+
+
+def _conflicting_response(answer):
+    return {
+        "problem_id": "p",
+        "problem_type": "unknown",
+        "task_type": "proof",
+        "domain_candidates": ["unknown"],
+        "reasoning_plan": ["Derive the claim."],
+        "solution": [{"step": 1, "content": "A proof attempt."}],
+        "final_answer": {"answer": answer, "answer_type": "proof"},
+        "verification": {"verification_result": "uncertain", "checks": [], "confidence": 0.2},
+        "assumptions": [],
+        "learning_hints": [],
+    }
+
+
+def test_conflict_critic_preferred_b_controls_selection():
+    client = ScriptedClient({
+        "solver": [_conflicting_response("WRONG_A"), _conflicting_response("RIGHT_B")],
+        "critic": [{"preferred_candidate": "B", "repair_candidate": "none", "repair_target": "", "confidence": 0.99}],
+    })
+    orchestrator = MathAgentOrchestrator(client=client, max_retries=0, max_candidates=2, enable_finalizer=False)
+    result = orchestrator.solve("Prove a difficult theorem with many cases.", {"idx": "pref-b"})
+    assert result["final_answer"]["answer"] == "RIGHT_B"
+
+
+def test_conflict_critic_preferred_a_controls_selection():
+    client = ScriptedClient({
+        "solver": [_conflicting_response("RIGHT_A"), _conflicting_response("WRONG_B")],
+        "critic": [{"preferred_candidate": "A", "repair_candidate": "none", "repair_target": "", "confidence": 0.99}],
+    })
+    orchestrator = MathAgentOrchestrator(client=client, max_retries=0, max_candidates=2, enable_finalizer=False)
+    result = orchestrator.solve("Prove a difficult theorem with many cases.", {"idx": "pref-a"})
+    assert result["final_answer"]["answer"] == "RIGHT_A"
+
+
+def test_solver_runtime_configuration_reaches_client():
+    client = ScriptedClient([_response("2")])
+    orchestrator = MathAgentOrchestrator(
+        client=client, max_retries=0, max_candidates=1, enable_finalizer=False,
+        solver_max_tokens=4096, solver_temperature=0.37,
+    )
+    orchestrator.solve("Compute 1+1.", {"idx": "runtime"})
+    assert client.calls[0]["max_tokens"] == 4096
+    assert client.calls[0]["temperature"] == 0.37

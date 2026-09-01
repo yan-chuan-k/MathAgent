@@ -1,4 +1,6 @@
 from math_agent_core.prompts import build_solver_messages
+from math_agent_core.prompts import OUTPUT_CONTRACT
+import json
 
 
 def test_solver_prompt_does_not_expose_benchmark_priors():
@@ -59,3 +61,12 @@ def test_solver_profiles_are_distinct():
     assert direct != independent
     assert "independently" in independent.lower()
     assert "repair" not in direct.lower() or "solver_profile" in verification.lower()
+
+
+def test_output_contract_matches_schema_public_fields():
+    schema = json.loads(open("result_schema.json", encoding="utf-8").read())
+    assert set(OUTPUT_CONTRACT).issubset(set(schema["properties"]))
+    assert set(schema["required"]) - {"_meta"} <= set(OUTPUT_CONTRACT)
+    assert "verification_process" in OUTPUT_CONTRACT["verification"]
+    assert "requested_checks" in OUTPUT_CONTRACT
+    assert "learning_hints" in OUTPUT_CONTRACT

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import ast
+import re
 from typing import Any, Dict, List
 
 from math_agent_core.state import EvidenceStatus, VerificationEvidence, VerificationLevel
@@ -60,6 +62,39 @@ def run_linear_algebra_verification(result: Dict[str, Any]) -> List[Verification
             item.details = f"{details} {_CANDIDATE_AUXILIARY_DETAILS}".strip()
         evidence.append(item)
     return evidence
+
+
+def run_system_inferred_matrix_verification(problem_text: str, answer: str) -> List[VerificationEvidence]:
+    """Infer only unambiguous matrix tasks from the problem text.
+
+    Unlike ``run_linear_algebra_verification``, these checks are system-owned
+    and may be decisive. Candidate-requested checks remain auxiliary.
+    """
+    text = str(problem_text or "")
+    matrix_match = re.search(r"\[\s*\[[^\]]+\](?:\s*,\s*\[[^\]]+\])+\s*\]", text)
+    if not matrix_match:
+        return []
+    try:
+        matrix = ast.literal_eval(matrix_match.group(0))
+    except Exception:
+        return []
+    normalized_answer = str(answer or "").strip()
+    if not normalized_answer or any(ch.isalpha() for ch in normalized_answer):
+        return []
+    lower = text.lower()
+    tool_name = None
+    if "determinant" in lower or "det(" in lower or "行列式" in text:
+        tool_name = "matrix_determinant"
+        args = {"matrix": matrix, "expected": normalized_answer}
+    elif "rank" in lower:
+        tool_name = "matrix_rank"
+        args = {"matrix": matrix, "expected": normalized_answer}
+    else:
+        return []
+    evidence = MatrixTool().run({"tool": tool_name, "arguments": args, "claim_id": "system_matrix_check"})
+    evidence.details = f"System-inferred {tool_name} check; exact verification."
+    evidence.is_decisive = True
+    return [evidence]
 
 
 def _extract_matrix_checks(result: Dict[str, Any]) -> List[Dict[str, Any]]:

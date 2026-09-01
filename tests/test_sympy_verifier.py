@@ -1,6 +1,10 @@
 from math_agent_core import MathAgentOrchestrator
 from math_agent_core.clients import ScriptedClient
-from math_agent_core.tools.sympy_tool import run_sympy_verification
+from math_agent_core.tools.sympy_tool import (
+    _extract_first_equation,
+    _extract_simple_arithmetic,
+    run_sympy_verification,
+)
 
 
 AUXILIARY_CHECK_NOTICE = "Candidate-proposed auxiliary check; not sufficient to verify final_answer."
@@ -70,3 +74,21 @@ def test_unrelated_requested_sympy_pass_cannot_solve_wrong_final_answer():
     assert AUXILIARY_CHECK_NOTICE in requested["details"]
     assert result["_meta"]["answer_verified"] is False
     assert result["_meta"]["overall_status"] != "solved"
+
+
+def test_system_inference_only_marks_plain_arithmetic_decisive():
+    evidence = run_sympy_verification("Compute 1+1.", "2", {})
+    arithmetic = next(item for item in evidence if item.method == "numeric_arithmetic")
+    assert arithmetic.status == "pass"
+    assert arithmetic.is_decisive is True
+    assert _extract_simple_arithmetic("Solve x^2 - 5*x + 6 = 0.") is None
+
+
+def test_natural_language_equation_body_is_extracted_without_prefix_suffix():
+    assert _extract_first_equation("Solve x^2 - 5*x + 6 = 0 for x.") == "x^2 - 5*x + 6=0"
+    assert _extract_first_equation("Find x if 2*x+3=7.") == "2*x+3=7"
+
+
+def test_polynomial_equation_does_not_create_false_arithmetic_failure():
+    evidence = run_sympy_verification("Solve x^2 - 5*x + 6 = 0 for x.", "x=2", {})
+    assert not any(item.method == "numeric_arithmetic" and item.status == "fail" for item in evidence)
