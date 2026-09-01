@@ -92,3 +92,34 @@ def test_natural_language_equation_body_is_extracted_without_prefix_suffix():
 def test_polynomial_equation_does_not_create_false_arithmetic_failure():
     evidence = run_sympy_verification("Solve x^2 - 5*x + 6 = 0 for x.", "x=2", {})
     assert not any(item.method == "numeric_arithmetic" and item.status == "fail" for item in evidence)
+
+
+def test_equation_solution_set_parses_symbolic_rhs_without_digit_harvesting():
+    evidence = run_sympy_verification("Solve x^2=2 over the reals.", "x=sqrt(2) or x=-sqrt(2)", {})
+    assert any(item.method == "equation_solution_set" and item.status == "pass" and item.claim_scope == "full_answer" for item in evidence)
+
+
+def test_equation_solution_set_rejects_wrong_symbolic_root():
+    evidence = run_sympy_verification("Solve x^2=2 over the reals.", "x=2", {})
+    assert any(item.method == "equation_solution_set" and item.status == "fail" for item in evidence)
+
+
+def test_equation_solution_set_handles_pi_roots():
+    evidence = run_sympy_verification("Solve x^2=pi^2 over the reals.", "x=pi or x=-pi", {})
+    assert any(item.method == "equation_solution_set" and item.status == "pass" for item in evidence)
+
+
+def test_solution_domain_specificity_prevents_positive_integer_false_positive():
+    evidence = run_sympy_verification("Solve 2*x=1 for positive integer x.", "x=1/2", {})
+    assert not any(item.method == "equation_solution_set" and item.status == "pass" and item.claim_scope == "full_answer" for item in evidence)
+
+
+def test_nonnegative_real_domains_are_supported():
+    for problem in ("Solve x^2=4 for non-negative real x.", "Solve x^2=4 for x≥0."):
+        evidence = run_sympy_verification(problem, "x=2", {})
+        assert any(item.method == "equation_solution_set" and item.status == "pass" and item.claim_scope == "full_answer" for item in evidence)
+
+
+def test_unreliable_rhs_does_not_create_decisive_equation_failure():
+    evidence = run_sympy_verification("Solve x^2=2 over the reals.", "The positive solution is approximately two.", {})
+    assert not any(item.method == "equation_solution" for item in evidence)

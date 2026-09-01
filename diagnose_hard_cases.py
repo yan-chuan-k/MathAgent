@@ -132,7 +132,7 @@ def evaluate(
         if agent is not None and expected_answer is not None:
             answer_evaluated += 1
             primary_expected, required_claims = _expected_spec(expected_answer)
-            answer_ok = answers_equivalent(final_response, primary_expected)
+            answer_ok = _primary_answer_matches(final_response, primary_expected)
             primary_evaluated += 1
             primary_correct += int(answer_ok)
             claim_results = [_match_required_claim(claim, final_response) for claim in required_claims]
@@ -140,8 +140,8 @@ def evaluate(
             if graded_claims:
                 claims_evaluated += len(graded_claims)
                 claims_correct += sum(graded_claims)
-                full_evaluated += 1
-                full_correct += int(answer_ok and len(graded_claims) == len(claim_results) and all(graded_claims))
+            full_evaluated += 1
+            full_correct += int(answer_ok and len(graded_claims) == len(claim_results) and all(graded_claims))
             if answer_ok:
                 answer_correct += 1
 
@@ -175,9 +175,7 @@ def evaluate(
         "answer_accuracy": answer_correct / answer_evaluated if answer_evaluated else None,
         "primary_answer_accuracy": primary_correct / primary_evaluated if primary_evaluated else None,
         "required_claim_accuracy": claims_correct / claims_evaluated if claims_evaluated else None,
-        "full_problem_accuracy": full_correct / full_evaluated if full_evaluated else (
-            answer_correct / answer_evaluated if answer_evaluated else None
-        ),
+        "full_problem_accuracy": full_correct / full_evaluated if full_evaluated else None,
         "expected_answer_coverage": expected_answer_count / len(items) if items else 0.0,
         "model_calls": client.total_calls if client is not None else 0,
         "model_calls_per_problem": client.total_calls / len(items) if client is not None and items else 0.0,
@@ -204,6 +202,29 @@ def _expected_spec(value: Any) -> tuple[str, list[str]]:
             claims = [claims]
         return str(primary), [str(item) for item in claims if str(item).strip()]
     return str(value), []
+
+
+def _primary_answer_matches(response: str, expected: str) -> bool:
+    """Benchmark-only extraction of an explicit final value/conclusion."""
+    response = str(response or "").strip()
+    expected = str(expected or "").strip()
+    if answers_equivalent(response, expected):
+        return True
+    fragments: list[str] = []
+    for pattern in (
+        r"(?:final\s+answer|final_response|answer|therefore|thus|hence|conclusion)\s*(?:is|=|:)?\s*([^.;\n]+)",
+        r"\b[A-Za-z][A-Za-z0-9_]*\s*=\s*([^.;\n]+)",
+    ):
+        fragments.extend(match.group(1).strip() for match in re.finditer(pattern, response, flags=re.IGNORECASE))
+    for fragment in fragments:
+        if answers_equivalent(fragment, expected):
+            return True
+        # For numeric expected values, only compare explicit extracted numeric expressions.
+        if re.fullmatch(r"\s*[+\-]?\d+(?:\.\d+)?\s*", expected):
+            number = re.search(r"[+\-]?\d+(?:\.\d+)?", fragment)
+            if number and answers_equivalent(number.group(0), expected):
+                return True
+    return False
 
 
 def _match_required_claim(claim: str, response: str) -> bool | None:

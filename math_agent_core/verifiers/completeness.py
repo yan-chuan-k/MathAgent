@@ -4,6 +4,7 @@ import re
 from typing import Any, Dict, List
 
 from math_agent_core.state import EvidenceStatus, VerificationEvidence, VerificationLevel
+from .target_vocab import target_aliases, target_present
 
 
 def check_completeness(problem_text: str, result: Dict[str, Any]) -> List[VerificationEvidence]:
@@ -65,9 +66,11 @@ def extract_answer_targets(problem_text: str) -> List[Dict[str, str]]:
 
 def _expand_compound_target(target: str) -> List[str]:
     text = str(target or "").strip()
-    match = re.match(r"(?:the\s+)?(determinant)\s+and\s+(rank|trace|inverse)\b", text, flags=re.IGNORECASE)
+    match = re.match(r"(?:the\s+)?(determinant|det|行列式)\s+and\s+(rank|秩|trace|inverse)\b", text, flags=re.IGNORECASE)
     if match:
-        return [match.group(1), match.group(2)]
+        first = "determinant" if target_present(match.group(1), "determinant") else match.group(1)
+        second = "rank" if target_present(match.group(2), "rank") else match.group(2)
+        return [first, second]
     return [text]
 
 
@@ -134,6 +137,9 @@ def _target_coverage(answer: str, targets: List[Dict[str, str]]) -> tuple[List[s
 
 def _target_tokens(name: str, symbol: str) -> List[str]:
     tokens = [name, symbol]
+    for canonical in ("determinant", "rank"):
+        if target_present(name, canonical):
+            tokens.extend(target_aliases(canonical))
     tokens.extend(re.findall(r"[A-Za-z][A-Za-z0-9_]*", name))
     return [token for token in tokens if len(token) >= 1]
 

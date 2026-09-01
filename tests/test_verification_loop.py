@@ -261,3 +261,15 @@ def test_single_determinant_system_check_is_decisive():
     result = orchestrator.solve("Compute determinant of [[1,2],[3,4]].", {"idx": "single-det"})
     assert result["_meta"]["overall_status"] == "solved"
     assert len(client.calls) == 1
+
+
+def test_multi_target_matrix_aliases_are_decisive_with_one_solver_call():
+    for answer in ("det=-2, rank=2", "determinant=-2, rank=2", "行列式=-2，秩=2"):
+        response = _response(answer, confidence=0.95)
+        response["problem_type"] = "linear_algebra"
+        client = ScriptedClient([response])
+        orchestrator = MathAgentOrchestrator(client=client, max_retries=0, max_candidates=1, enable_finalizer=False)
+        result = orchestrator.solve("Compute determinant and rank of [[1,2],[3,4]].", {"idx": answer})
+        assert result["_meta"]["overall_status"] == "solved"
+        assert result["_meta"]["answer_verified"] is True
+        assert len(client.calls) == 1

@@ -241,7 +241,7 @@ class SafeSympyTool:
                 verification_level=VerificationLevel.EXACT_SYMBOLIC.value, is_decisive=False,
             )
         expected = sp.solveset(expression, symbol, domain=domain)
-        if not isinstance(expected, sp.FiniteSet):
+        if expected is not sp.S.EmptySet and not isinstance(expected, sp.FiniteSet):
             return VerificationEvidence(
                 verifier=self.verifier_name, claim_id=claim_id,
                 status=EvidenceStatus.INCONCLUSIVE.value, method="equation_solution_set",
@@ -423,7 +423,7 @@ def _extract_first_equation(text: str) -> Optional[str]:
         r"(?<![A-Za-z0-9_])"
         r"([A-Za-z0-9_().]+(?:\s*[+\-*/^]\s*[A-Za-z0-9_().]+)*)"
         r"\s*=\s*"
-        r"([A-Za-z0-9_().]+)"
+        r"([A-Za-z0-9_().]+(?:\s*[+\-*/^]\s*[A-Za-z0-9_().]+)*)"
     )
     for match in pattern.finditer(str(text or "")):
         left, right = match.group(1).strip(), match.group(2).strip().rstrip(".,;:!?\u3002")
@@ -440,18 +440,25 @@ def _split_equation(equation: str) -> tuple[str, str]:
 
 
 def _extract_answer_values(answer: str) -> List[str]:
-    text = str(answer or "")
+    """Extract complete, safely parsed RHS expressions for equation checks."""
+    text = str(answer or "").strip()
+    if not text:
+        return []
+    bound = re.findall(r"\b[A-Za-z]\s*=\s*([^,;]+?)(?=\s+(?:and|or)\b|[,;]|$)", text, flags=re.IGNORECASE)
     values: List[str] = []
-    for match in re.finditer(r"[A-Za-z]\s*=\s*([+\-]?\d+(?:/\d+)?(?:\.\d+)?)", text):
-        values.append(match.group(1))
+    for raw in bound:
+        try:
+            values.append(str(_parse_expr(raw.strip().rstrip("."))))
+        except Exception:
+            return []
     if values:
         return values
     if re.fullmatch(r"\s*[+\-]?\d+(?:/\d+)?(?:\.\d+)?\s*", text):
         return [text.strip()]
-    return re.findall(r"[+\-]?\d+(?:/\d+)?(?:\.\d+)?", text)[:4]
+    return []
 
 
-def _infer_solution_domain(problem_text: str) -> str:
+def _legacy_infer_solution_domain(problem_text: str) -> str:
     text = str(problem_text or "").lower()
     if re.search(r"positive real|positive|x\s*>\s*0|正实", text):
         return "positive_real"
@@ -468,7 +475,7 @@ def _infer_solution_domain(problem_text: str) -> str:
     return "complex"
 
 
-def _solution_domain(name: str):
+def _legacy_solution_domain(name: str):
     import sympy as sp
 
     return {
@@ -476,11 +483,54 @@ def _solution_domain(name: str):
         "real": sp.S.Reals,
         "positive_real": sp.Interval.open(0, sp.oo),
         "nonnegative": sp.Interval(0, sp.oo),
+        "nonnegative_real": sp.Interval(0, sp.oo),
+        "nonnegative_real": sp.Interval(0, sp.oo),
+        "nonnegative_real": sp.Interval(0, sp.oo),
+        "nonnegative_real": sp.Interval(0, sp.oo),
         "integer": sp.S.Integers,
     }.get(name)
 
 
-def _extract_solution_values(answer: str) -> list[Any]:
+def _infer_solution_domain(problem_text: str) -> str:
+    """Infer the most specific safe solution domain from the statement."""
+    text = str(problem_text or "").lower()
+    if re.search(r"positive\s+(?:integer|integers|integral)|positive integral|正整数", text):
+        return "positive_integer"
+    if re.search(r"non[- ]?negative\s+(?:integer|integers|integral)|非负整数", text):
+        return "nonnegative_integer"
+    if re.search(r"negative\s+(?:integer|integers|integral)|负整数", text):
+        return "negative_integer"
+    if re.search(r"positive\s+real|positive\s+reals|x\s*>\s*0|正实数", text):
+        return "positive_real"
+    if re.search(r"non[- ]?negative\s+real|non[- ]?negative\s+reals|x\s*(?:>=|≥)\s*0|非负实数", text):
+        return "nonnegative_real"
+    if re.search(r"real numbers?|over the reals?|实数", text):
+        return "real"
+    if re.search(r"integers?|integer|整数", text):
+        return "integer"
+    if re.search(r"algebraic|irrational|rational\s+only|modulo|mod\s+", text):
+        return "unknown"
+    if re.search(r"complex|complex numbers?|复数", text):
+        return "complex"
+    return "complex"
+
+
+def _solution_domain(name: str):
+    import sympy as sp
+    return {
+        "complex": sp.S.Complexes,
+        "real": sp.S.Reals,
+        "positive_real": sp.Interval.open(0, sp.oo),
+        "nonnegative": sp.Interval(0, sp.oo),
+        "nonnegative_real": sp.Interval(0, sp.oo),
+        "positive_integer": sp.Intersection(sp.S.Integers, sp.Interval.open(0, sp.oo)),
+        "nonnegative_integer": sp.Intersection(sp.S.Integers, sp.Interval(0, sp.oo)),
+        "negative_integer": sp.Intersection(sp.S.Integers, sp.Interval.open(-sp.oo, 0)),
+        "integer": sp.S.Integers,
+    }.get(str(name or "").lower())
+
+
+def _legacy_extract_solution_values(answer: str) -> list[Any]:
     import sympy as sp
 
     text = str(answer or "")
@@ -501,6 +551,25 @@ def _extract_solution_values(answer: str) -> list[Any]:
     tokens = re.findall(r"[+\-]?\d+(?:/\d+)?(?:\.\d+)?", compact)
     try:
         return [_parse_expr(token) for token in tokens]
+    except Exception:
+        return []
+
+
+def _extract_solution_values(answer: str) -> list[Any]:
+    """Parse complete solution RHS expressions; never harvest arbitrary digits."""
+    text = str(answer or "").strip()
+    if "=" in text:
+        values = _extract_answer_values(text)
+        try:
+            return [_parse_expr(value) for value in values]
+        except Exception:
+            return []
+    compact = text.strip().strip("{}[]")
+    chunks = re.split(r"\s*(?:or|或|,|;)\s*", compact, flags=re.IGNORECASE)
+    if not chunks or any(not chunk.strip() for chunk in chunks):
+        return []
+    try:
+        return [_parse_expr(chunk.strip().rstrip(".")) for chunk in chunks]
     except Exception:
         return []
 

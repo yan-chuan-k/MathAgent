@@ -6,6 +6,7 @@ from typing import Any, Dict, List
 
 from math_agent_core.state import EvidenceStatus, VerificationEvidence, VerificationLevel
 from math_agent_core.tools.matrix_tool import MatrixTool
+from .target_vocab import target_aliases, target_present
 
 
 MATRIX_TOOLS = {
@@ -83,9 +84,9 @@ def run_system_inferred_matrix_verification(problem_text: str, answer: str) -> L
         return []
     lower = text.lower()
     targets = []
-    if "determinant" in lower or "det(" in lower or "行列式" in text:
+    if target_present(text, "determinant") or "det(" in lower:
         targets.append("determinant")
-    if re.search(r"\brank\b", lower) or "秩" in text:
+    if target_present(text, "rank"):
         targets.append("rank")
     if not targets:
         return []
@@ -94,9 +95,7 @@ def run_system_inferred_matrix_verification(problem_text: str, answer: str) -> L
         missing = [target for target in targets if target not in lower]
         # A bare scalar cannot establish a multi-target response.
         answer_lower = normalized_answer.lower()
-        mentioned = [target for target in targets if re.search(rf"{target}\s*[:=]", answer_lower)]
-        if "determinant" in targets and re.search(r"\bdet\s*[:=]", answer_lower):
-            mentioned.append("determinant")
+        mentioned = [target for target in targets if _extract_labeled_number(normalized_answer, target)]
         if len(mentioned) < len(targets):
             evidence.append(VerificationEvidence(
                 verifier="matrix_tool", claim_id="system_matrix_targets",
@@ -141,7 +140,7 @@ def run_system_inferred_matrix_verification(problem_text: str, answer: str) -> L
 
 
 def _extract_labeled_number(answer: str, label: str) -> str:
-    aliases = "(?:determinant|det)" if label == "determinant" else re.escape(label)
+    aliases = "(?:" + "|".join(re.escape(alias) for alias in target_aliases(label)) + ")"
     match = re.search(rf"{aliases}\s*[:=]\s*([+\-]?\d+(?:\.\d+)?)", str(answer or ""), flags=re.IGNORECASE)
     return match.group(1) if match else ""
 
