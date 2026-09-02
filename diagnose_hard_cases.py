@@ -10,7 +10,7 @@ from typing import Any, Dict, Iterable, List
 
 from intern_s1_client import InternS1Client
 from math_agent_core.clients import MockClient
-from math_agent_core.evaluation import answers_equivalent
+from math_agent_core.evaluation import answers_equivalent, grade_full_problem
 from math_agent_core.router import classify_problem
 from user_agent import ReasoningAgent
 
@@ -83,6 +83,7 @@ def evaluate(
     repair_triggers = 0
     targeted_repairs = 0
     expected_answer_count = 0
+    grader_unresolved_count = 0
 
     for item in items:
         problem = str(item.get("problem", ""))
@@ -124,25 +125,25 @@ def evaluate(
             targeted_repairs += int(metrics.get("targeted_repair_triggered", 0) or 0)
         model_calls = (client.total_calls - calls_before) if client is not None else 0
         # Ground truth is grading-only and is never included in solver metadata.
-        expected_answer = item.get("expected_answer")
+        expected_answer = item.get("grading", item.get("expected_answer"))
         if expected_answer is None:
-            expected_answer = item.get("grading", item.get("answer"))
+            expected_answer = item.get("answer")
         expected_answer_count += int(expected_answer is not None)
         answer_ok = None
         if agent is not None and expected_answer is not None:
             answer_evaluated += 1
-            primary_expected, required_claims = _expected_spec(expected_answer)
-            answer_ok = _primary_answer_matches(final_response, primary_expected)
-            primary_evaluated += 1
-            primary_correct += int(answer_ok)
-            claim_results = [_match_required_claim(claim, final_response) for claim in required_claims]
-            graded_claims = [item for item in claim_results if item is not None]
-            if graded_claims:
-                claims_evaluated += len(graded_claims)
-                claims_correct += sum(graded_claims)
+            grading = grade_full_problem(final_response, expected_answer)
+            primary = grading["primary"]
+            answer_ok = primary["correct"]
+            primary_evaluated += int(answer_ok is not None)
+            primary_correct += int(answer_ok is True)
+            claim_items = grading["required_claims"]["claims"]
+            claims_evaluated += sum(item["correct"] is not None for item in claim_items)
+            claims_correct += sum(item["correct"] is True for item in claim_items)
             full_evaluated += 1
-            full_correct += int(answer_ok and len(graded_claims) == len(claim_results) and all(graded_claims))
-            if answer_ok:
+            grader_unresolved_count += int(grading["correct"] is None)
+            full_correct += int(grading["correct"] is True)
+            if answer_ok is True:
                 answer_correct += 1
 
         rows.append(
@@ -156,6 +157,7 @@ def evaluate(
                 "final_response": final_response,
                 "expected_answer": expected_answer,
                 "answer_ok": answer_ok,
+                "grading": grading if agent is not None and expected_answer is not None else None,
                 "model_calls": model_calls,
                 "answer_hint": item.get("answer_hint"),
                 "agent_result": result,
@@ -176,6 +178,10 @@ def evaluate(
         "primary_answer_accuracy": primary_correct / primary_evaluated if primary_evaluated else None,
         "required_claim_accuracy": claims_correct / claims_evaluated if claims_evaluated else None,
         "full_problem_accuracy": full_correct / full_evaluated if full_evaluated else None,
+        "strict_accuracy": full_correct / answer_evaluated if answer_evaluated else None,
+        "accuracy_on_gradable_cases": full_correct / (full_evaluated - grader_unresolved_count) if (full_evaluated - grader_unresolved_count) else None,
+        "grader_unresolved_count": grader_unresolved_count,
+        "grader_unresolved_rate": grader_unresolved_count / full_evaluated if full_evaluated else 0.0,
         "expected_answer_coverage": expected_answer_count / len(items) if items else 0.0,
         "model_calls": client.total_calls if client is not None else 0,
         "model_calls_per_problem": client.total_calls / len(items) if client is not None and items else 0.0,
@@ -276,7 +282,9 @@ def print_summary(summary: Dict[str, Any]) -> None:
         f"candidate_b_trigger_rate={summary['candidate_b_trigger_rate']:.3f} "
         f"critic_trigger_rate={summary['critic_trigger_rate']:.3f} "
         f"repair_trigger_rate={summary['repair_trigger_rate']:.3f} "
-        f"targeted_repair_rate={summary['targeted_repair_rate']:.3f}"
+        f"targeted_repair_rate={summary['targeted_repair_rate']:.3f} "
+        f"grader_unresolved_count={summary['grader_unresolved_count']} "
+        f"grader_unresolved_rate={summary['grader_unresolved_rate']:.3f}"
     )
     for row in summary["rows"]:
         marker = "OK" if row["route_ok"] else "MISS"
