@@ -258,6 +258,9 @@ def _normalize_requested_check(item: Any) -> Dict[str, Any]:
         "vector_normalization",
         "matrix_equivalence",
         "vector_equivalence",
+        "small_case_enumeration",
+        "recurrence_check",
+        "modular_check",
     }
     if not isinstance(item, dict):
         return {"tool": "numeric_arithmetic", "arguments": {}}

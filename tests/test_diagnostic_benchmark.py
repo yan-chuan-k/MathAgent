@@ -72,20 +72,6 @@ def test_benchmark_accepts_grading_field_as_fixture_truth(tmp_path):
     assert summary["expected_answer_coverage"] == 1.0
 
 
-def test_required_claim_matcher_uses_canonical_aliases():
-    assert diagnose_hard_cases._match_required_claim("UNBIASED", "The estimator is unbiased.") is True
-    assert diagnose_hard_cases._match_required_claim("UNBIASED", "The estimator is biased.") is False
-    assert diagnose_hard_cases._match_required_claim("unknown claim", "anything") is None
-
-
-def test_primary_answer_extraction_handles_labeled_numeric_answers():
-    assert diagnose_hard_cases._primary_answer_matches("132", "132")
-    assert diagnose_hard_cases._primary_answer_matches("C_6 = 132", "132")
-    assert diagnose_hard_cases._primary_answer_matches("Therefore, C_6=132.", "132")
-    assert not diagnose_hard_cases._primary_answer_matches("C_6=131", "132")
-    assert diagnose_hard_cases._primary_answer_matches("K=1", "1")
-
-
 def test_full_problem_accuracy_counts_single_claim_problems(tmp_path, monkeypatch):
     path = tmp_path / "single.jsonl"
     path.write_text(json.dumps({"idx": 1, "problem": "Compute 1+1.", "expected_answer": "2"}) + "\n", encoding="utf-8")
@@ -112,3 +98,4 @@ def test_full_problem_accuracy_requires_all_gradable_claims(tmp_path, monkeypatc
     summary = diagnose_hard_cases.evaluate(path, tmp_path / "summary.json", True, True, True)
     assert summary["primary_answer_accuracy"] == 1.0
     assert summary["full_problem_accuracy"] == 0.0
+    assert summary["required_claim_unresolved_count"] == 0

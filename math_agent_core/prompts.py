@@ -80,6 +80,61 @@ DOMAIN_GUIDE = {
     ),
 }
 
+DISCRETE_SUBTYPE_GUIDE = {
+    "combinatorial_counting": (
+        "组合计数: first state what one distinct object is. Explicitly decide whether order matters, whether repetition is allowed, "
+        "whether the underlying objects are distinguishable, whether cases overlap, and whether symmetry causes overcounting. "
+        "Compare direct counting with complement or inclusion-exclusion when useful. Before multiplying choices, check that the choices "
+        "are independent. Do not use stars-and-bars when upper bounds or exclusions invalidate it; do not forget symmetry division or "
+        "inclusion-exclusion signs. When practical, run a small finite sanity check."
+    ),
+    "recurrence": (
+        "递推: use this checklist: (1) state the indexing convention, (2) list the initial conditions, (3) derive the recurrence, "
+        "(4) solve it with the appropriate method, (5) substitute the proposed form back into the recurrence, and (6) verify the "
+        "initial terms. If a closed form is produced, test at least the first 2-3 valid indices. When explicit generated terms are "
+        "available, request recurrence_check with those terms as an auxiliary exact check."
+    ),
+    "generating_function": (
+        "生成函数: (1) define the generating function and say whether it is ordinary or exponential, (2) derive the algebraic identity "
+        "with index shifts and initial terms shown, (3) solve for the generating function, (4) extract the requested coefficient, and "
+        "(5) compare initial coefficients with the recurrence or direct counting when practical. Watch especially for index shifts, "
+        "missing initial terms, and confusing ordinary with exponential generating functions. If the derivation yields explicit recurrence "
+        "terms, request recurrence_check as an auxiliary exact check."
+    ),
+    "graph_theory": (
+        "图论: state relevant assumptions before proof or calculation: simple versus multigraph, directed versus undirected, connectedness, "
+        "and weighted versus unweighted. Check cheap invariants first: handshake lemma, degree bounds, a tree's n-1 edge count, bipartite "
+        "parity constraints, connected-component constraints, and extremal small cases. Do not infer Hamiltonian, Eulerian, matching, or "
+        "coloring conclusions from suggestive degree information unless the exact theorem hypotheses are satisfied."
+    ),
+    "number_theory_modular": (
+        "数论/同余: reduce modulo m early. Before modular inversion, check gcd(a,m); before Euler/Fermat, verify coprimality and theorem "
+        "hypotheses; for CRT with non-coprime moduli, check compatibility rather than assuming uniqueness. Substitute any proposed residue "
+        "back into the original congruence. Distinguish finding one solution from describing all residue classes."
+    ),
+    "general_discrete": (
+        "General discrete math: identify whether the core object is a count, recurrence, generating function, graph, or congruence, "
+        "then use the closest subtype reasoning and the cheapest exact check justified by the statement."
+    ),
+}
+
+
+DISCRETE_CHECK_GUIDE = """
+For discrete_math, when a low-cost exact check applies, populate requested_checks using one of these existing contracts:
+- modular_check: {"tool":"modular_check","arguments":{"base":2,"exponent":100,"modulus":7,"expected":2}};
+  direct reduction uses {"value":...,"modulus":...,"expected":...}; a proposed linear-congruence residue uses
+  {"coefficient":7,"solution":9,"rhs":3,"modulus":20}.
+- recurrence_check: {"tool":"recurrence_check","arguments":{"initial_values":[0,1],"coefficients":[1,1],"claimed_values":[1,2,3,5,8]}}.
+  coefficients are ordered so [c1,c2] means a_n=c1*a_(n-1)+c2*a_(n-2); optional constant is supported.
+  For recurrence and generating-function work, actually populate this check when you have explicit initial/generated terms.
+- small_case_enumeration: subsets use {"kind":"subsets","n":10,"k":4,"expected":210}; ordered selections without repetition use
+  {"kind":"permutations","n":7,"k":3,"expected":210}; binary strings use
+  {"kind":"binary_strings","length":6,"ones":2,"no_adjacent_ones":false,"expected":15}; bounded tuples use
+  {"kind":"integer_tuples","length":3,"min_value":0,"max_value":5,"sum":5,"distinct":false,"expected":21}.
+Only request a check whose arguments are directly justified by the problem and your solution. Candidate-requested checks are auxiliary subclaim checks and are nondecisive by themselves; do not treat them as proof of the full final answer.
+""".strip()
+
+
 CANONICAL_DOMAINS = tuple(DOMAIN_GUIDE.keys())
 
 TASK_TYPES = (
@@ -213,7 +268,7 @@ OUTPUT_CONTRACT = {
         "confidence": 0.0,
     },
     "requested_checks": [
-        {"tool": "symbolic_equivalence|equation_solution|equation_solution_set|numeric_arithmetic|matrix_determinant", "arguments": {}, "claim_id": "optional"}
+        {"tool": "symbolic_equivalence|equation_solution|equation_solution_set|numeric_arithmetic|matrix_determinant|small_case_enumeration|recurrence_check|modular_check", "arguments": {}, "claim_id": "optional"}
     ],
     "assumptions": ["essential assumption not explicit in the problem; otherwise empty"],
     "learning_hints": ["optional concise reusable hint"],
@@ -259,6 +314,15 @@ def build_solver_messages(
         "problem_statement": problem_text,
     }
     primary_output_hint = DOMAIN_OUTPUT_HINTS.get(primary_domain, DOMAIN_OUTPUT_HINTS["advanced_math"])
+    discrete_block = ""
+    if primary_domain == "discrete_math":
+        subtype = str(route_hint.get("discrete_subtype") or "general_discrete")
+        discrete_block = (
+            "\n\nDISCRETE_MATH_V1\n"
+            f"subtype={subtype}\n"
+            f"{DISCRETE_SUBTYPE_GUIDE.get(subtype, DISCRETE_SUBTYPE_GUIDE['general_discrete'])}\n"
+            f"{DISCRETE_CHECK_GUIDE}\n"
+        )
     repair_block = ""
     if repair_context:
         repair_block = (
@@ -293,7 +357,9 @@ def build_solver_messages(
         "- Algebra: check closure, kernels/images, dimensions, and defining relations where relevant.\n"
         "- Differential equations/PDE: substitute the solution and check all initial or boundary conditions.\n"
         "- Optimization: check feasibility, optimality conditions, and the reported objective value.\n"
+        "- Discrete math: prefer exact small-case enumeration, recurrence term checks, or modular checks when applicable.\n"
         "- If verification fails, repair the solution before returning JSON.\n\n"
+        f"{discrete_block}"
         "SOLVER_PROFILE\n"
         f"{profile_instruction}\n\n"
         f"{strategy_block}"
@@ -540,6 +606,8 @@ def _normalize_route_hint(value: Any) -> dict[str, Any]:
         "task_type": str(value.get("task_type") or "unknown") if isinstance(value.get("task_type"), str) else "unknown",
         "verifiability": str(value.get("verifiability") or "low") if isinstance(value.get("verifiability"), str) else "low",
         "difficulty": str(value.get("difficulty") or "medium") if isinstance(value.get("difficulty"), str) else "medium",
+        "discrete_subtype": str(value.get("discrete_subtype") or "general_discrete")
+        if isinstance(value.get("discrete_subtype"), str) else "general_discrete",
     }
 
 

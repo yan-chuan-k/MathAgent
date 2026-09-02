@@ -3,14 +3,13 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import re
 import sys
 from pathlib import Path
 from typing import Any, Dict, Iterable, List
 
 from intern_s1_client import InternS1Client
 from math_agent_core.clients import MockClient
-from math_agent_core.evaluation import answers_equivalent, grade_full_problem
+from math_agent_core.evaluation import grade_full_problem
 from math_agent_core.router import classify_problem
 from user_agent import ReasoningAgent
 
@@ -84,6 +83,7 @@ def evaluate(
     targeted_repairs = 0
     expected_answer_count = 0
     grader_unresolved_count = 0
+    required_claim_unresolved_count = 0
 
     for item in items:
         problem = str(item.get("problem", ""))
@@ -140,6 +140,7 @@ def evaluate(
             claim_items = grading["required_claims"]["claims"]
             claims_evaluated += sum(item["correct"] is not None for item in claim_items)
             claims_correct += sum(item["correct"] is True for item in claim_items)
+            required_claim_unresolved_count += sum(item["correct"] is None for item in claim_items)
             full_evaluated += 1
             grader_unresolved_count += int(grading["correct"] is None)
             full_correct += int(grading["correct"] is True)
@@ -181,6 +182,7 @@ def evaluate(
         "strict_accuracy": full_correct / answer_evaluated if answer_evaluated else None,
         "accuracy_on_gradable_cases": full_correct / (full_evaluated - grader_unresolved_count) if (full_evaluated - grader_unresolved_count) else None,
         "grader_unresolved_count": grader_unresolved_count,
+        "required_claim_unresolved_count": required_claim_unresolved_count,
         "grader_unresolved_rate": grader_unresolved_count / full_evaluated if full_evaluated else 0.0,
         "expected_answer_coverage": expected_answer_count / len(items) if items else 0.0,
         "model_calls": client.total_calls if client is not None else 0,
@@ -200,73 +202,6 @@ def evaluate(
     return summary
 
 
-def _expected_spec(value: Any) -> tuple[str, list[str]]:
-    if isinstance(value, dict):
-        primary = value.get("primary", value.get("answer", value.get("expected_answer", "")))
-        claims = value.get("required_claims", value.get("claims", []))
-        if not isinstance(claims, list):
-            claims = [claims]
-        return str(primary), [str(item) for item in claims if str(item).strip()]
-    return str(value), []
-
-
-def _primary_answer_matches(response: str, expected: str) -> bool:
-    """Benchmark-only extraction of an explicit final value/conclusion."""
-    response = str(response or "").strip()
-    expected = str(expected or "").strip()
-    if answers_equivalent(response, expected):
-        return True
-    fragments: list[str] = []
-    for pattern in (
-        r"(?:final\s+answer|final_response|answer|therefore|thus|hence|conclusion)\s*(?:is|=|:)?\s*([^.;\n]+)",
-        r"\b[A-Za-z][A-Za-z0-9_]*\s*=\s*([^.;\n]+)",
-    ):
-        fragments.extend(match.group(1).strip() for match in re.finditer(pattern, response, flags=re.IGNORECASE))
-    for fragment in fragments:
-        if answers_equivalent(fragment, expected):
-            return True
-        # For numeric expected values, only compare explicit extracted numeric expressions.
-        if re.fullmatch(r"\s*[+\-]?\d+(?:\.\d+)?\s*", expected):
-            number = re.search(r"[+\-]?\d+(?:\.\d+)?", fragment)
-            if number and answers_equivalent(number.group(0), expected):
-                return True
-    return False
-
-
-def _match_required_claim(claim: str, response: str) -> bool | None:
-    """Return True/False for known canonical claims, None when ungradable."""
-    claim_text = str(claim or "").strip()
-    text = str(response or "").lower()
-    compact = re.sub(r"[^a-z0-9]+", "", text)
-    key = re.sub(r"[^a-z0-9]+", "", claim_text.lower())
-    patterns = {
-        "unbiased": ("unbiased", "unbiasedestimator", "unbiasedness", "无偏"),
-        "dctnotapplicable": (
-            "dctnotapplicable", "dominatedconvergencedoesnotapply",
-            "dominatedconvergencenotapplicable", "dctdoesnotapply", "dctnotapply",
-        ),
-        "quadraticconvergence": ("quadraticconvergence", "quadraticrate", "order2", "quadratic"),
-        "weierstrassmtest": ("weierstrassmtest", "weierstrassmtest", "mtest", "mtestcriterion"),
-        "varbetahatsigma2xtx1": (
-            "varbetahatsigma2xtx1", "covarianceofbetahat", "varianceofbetahat",
-            "sigma2xtx1", "sigma^2*(x^tx)^(-1)".replace("^", ""),
-        ),
-        "newtoniteration": ("newtoniteration", "newtonsmethoditeration", "xnext", "x_{n+1}"),
-    }
-    aliases = patterns.get(key)
-    if aliases is None:
-        return None
-    for alias in aliases:
-        alias_text = str(alias).lower()
-        if re.search(r"[^a-z0-9]", alias_text):
-            if alias_text in text:
-                return True
-        else:
-            if alias_text in compact:
-                return True
-    return False
-
-
 def print_summary(summary: Dict[str, Any]) -> None:
     _safe_print(
         f"total={summary['total']} "
@@ -284,6 +219,7 @@ def print_summary(summary: Dict[str, Any]) -> None:
         f"repair_trigger_rate={summary['repair_trigger_rate']:.3f} "
         f"targeted_repair_rate={summary['targeted_repair_rate']:.3f} "
         f"grader_unresolved_count={summary['grader_unresolved_count']} "
+        f"required_claim_unresolved_count={summary['required_claim_unresolved_count']} "
         f"grader_unresolved_rate={summary['grader_unresolved_rate']:.3f}"
     )
     for row in summary["rows"]:

@@ -3,6 +3,47 @@ from __future__ import annotations
 from typing import Dict, List
 
 
+DISCRETE_STRATEGIES: Dict[str, List[str]] = {
+    "combinatorial_counting": [
+        "counting_case_split",
+        "complement_inclusion_exclusion",
+        "bijection_double_count",
+        "symmetry_overcount_audit",
+        "small_case_enumeration",
+    ],
+    "recurrence": [
+        "recurrence_unroll",
+        "characteristic_recurrence",
+        "closed_form_substitution",
+        "induction_recurrence",
+        "generating_function",
+    ],
+    "generating_function": [
+        "ordinary_generating_function",
+        "index_shift_initial_term_audit",
+        "coefficient_extraction",
+        "recurrence_to_generating_function",
+        "small_case_coefficient_check",
+    ],
+    "graph_theory": [
+        "graph_invariant",
+        "handshake_tree_invariants",
+        "degree_connectivity",
+        "extremal_graph_argument",
+        "constructive_graph_search",
+    ],
+    "number_theory_modular": [
+        "modular_reduction",
+        "gcd_inverse_check",
+        "congruence_class_analysis",
+        "crt_compatibility",
+        "euler_fermat_hypotheses",
+        "small_modulus_check",
+    ],
+    "general_discrete": ["inclusion_exclusion", "recurrence", "bijection", "generating_function"],
+}
+
+
 STRATEGIES: Dict[str, List[str]] = {
     "calculus": ["direct_derivative", "substitution", "convexity", "inequality"],
     "real_analysis": ["definition_check", "sequence_criterion", "epsilon_delta", "counterexample_search"],
@@ -27,7 +68,9 @@ STRATEGIES: Dict[str, List[str]] = {
 }
 
 
-def strategies_for_domain(domain: str) -> List[str]:
+def strategies_for_domain(domain: str, subtype: str | None = None) -> List[str]:
+    if domain == "discrete_math":
+        return list(DISCRETE_STRATEGIES.get(str(subtype or "general_discrete"), DISCRETE_STRATEGIES["general_discrete"]))
     return list(STRATEGIES.get(domain, STRATEGIES["unknown"]))
 
 

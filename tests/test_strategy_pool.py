@@ -30,3 +30,12 @@ def test_legacy_two_argument_call_remains_supported():
 def test_budget_normalizes_labels_and_unknown_verifiability():
     assert choose_strategy_budget(" CALCULATION ", 3, "HIGH") == 1
     assert choose_strategy_budget("calculation", 3, "unsupported") == 2
+
+
+
+def test_discrete_subtype_uses_specialized_strategy_pool():
+    from math_agent_core.search.strategy_pool import strategies_for_domain
+
+    assert strategies_for_domain("discrete_math", "number_theory_modular")[0] == "modular_reduction"
+    assert strategies_for_domain("discrete_math", "recurrence")[0] == "recurrence_unroll"
+    assert strategies_for_domain("discrete_math", "generating_function")[0] == "ordinary_generating_function"

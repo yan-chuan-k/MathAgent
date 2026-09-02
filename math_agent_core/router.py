@@ -30,9 +30,12 @@ _SUBJECT_ALIAS_WEIGHT = 12.0
 
 _DOMAIN_KEYWORDS: Dict[str, Tuple[str, ...]] = {
     "discrete_math": (
-        "离散", "组合", "图论", "图", "树", "匹配", "染色", "递推", "递归", "生成函数", "鸽巢",
-        "容斥", "排列", "计数", "整数分拆", "同余", "欧拉函数", "费马", "中国剩余", "burnside",
-        "graph", "combin", "recurrence", "generating function", "pigeonhole", "inclusion-exclusion",
+        "离散", "组合", "图论", "图", "树", "匹配", "染色", "递推", "递归", "生成函数", "母函数", "鸽巢",
+        "容斥", "排列", "计数", "整数分拆", "同余", "模", "余数", "整除", "最大公约数", "欧拉函数", "费马", "中国剩余", "burnside",
+        "graph", "graphs", "vertex", "vertices", "edge", "edges", "tree", "spanning tree",
+        "matching", "coloring", "binary string", "subset", "permutation", "combin", "choose", "in how many ways", "recurrence", "generating function",
+        "coefficient of", "pigeonhole", "inclusion-exclusion", "degree sequence", "complete graph", "bipartite", "congruence", "≡", "mod ", "modulo", "remainder",
+        "divisibility", "gcd", "chinese remainder", "crt", "euler phi", "phi function", "totient", "euclidean algorithm", "multiplicative order", "primitive root", "derangement", "surjection", "onto function", "stirling", "catalan", "composition", "integer partition", "ramsey", "chromatic", "euler trail", "euler circuit", "hamiltonian", "hall's theorem", "graphical degree sequence", "多少种方法",
     ),
     "numerical_analysis": (
         "数值", "插值", "迭代", "牛顿法", "欧拉法", "龙格", "runge-kutta", "误差", "收敛阶",
@@ -112,6 +115,42 @@ _DOMAIN_KEYWORDS: Dict[str, Tuple[str, ...]] = {
     ),
 }
 
+DISCRETE_SUBTYPE_KEYWORDS: Dict[str, Tuple[str, ...]] = {
+    "combinatorial_counting": (
+        "组合计数", "计数", "排列", "组合", "容斥", "鸽巢", "双计数", "bijection", "双射",
+        "inclusion-exclusion", "pigeonhole", "permutation", "combination", "counting", "choose",
+        "binary string", "how many ways", "in how many ways", "subset", "subsets", "ordered selection", "stars and bars",
+        "derangement", "surjection", "onto function", "stirling", "catalan", "composition", "integer partition",
+    ),
+    "recurrence": (
+        "递推", "递归", "递推式", "递推关系", "recurrence", "recursive", "characteristic equation",
+    ),
+    "generating_function": (
+        "生成函数", "母函数", "generating function", "ordinary generating function", "exponential generating function",
+        "coefficient extraction", "系数提取", "coefficient of", "[x^",
+    ),
+    "graph_theory": (
+        "图论", "图", "顶点", "边", "树", "生成树", "匹配", "染色", "连通", "路径", "回路", "度数",
+        "graph", "vertex", "vertices", "edge", "edges", "tree", "spanning tree", "matching", "coloring",
+        "connected", "path", "cycle", "degree sequence", "complete graph", "bipartite",
+        "ramsey", "chromatic", "euler trail", "euler circuit", "hamiltonian", "hall's theorem", "graphical degree sequence",
+    ),
+    "number_theory_modular": (
+        "数论", "同余", "模", "余数", "整除", "最大公约数", "欧拉函数", "费马", "中国剩余",
+        "congruence", "≡", "modulo", "mod ", "remainder", "divisibility", "gcd", "totient", "fermat",
+        "chinese remainder", "crt", "euler phi", "phi function", "totient", "euclidean algorithm", "multiplicative order", "primitive root",
+    ),
+}
+
+_DISCRETE_SUBTYPE_PRIORITY: Tuple[str, ...] = (
+    "generating_function",
+    "recurrence",
+    "graph_theory",
+    "number_theory_modular",
+    "combinatorial_counting",
+)
+
+
 _SUBJECT_ALIASES: Dict[str, str] = {
     "离散数学": "discrete_math",
     "组合数学": "discrete_math",
@@ -180,6 +219,81 @@ def classify_task_type(problem_text: str) -> str:
     if re.search(r"\d\s*[+\-*/^]\s*\d", text) or "=?" in text.replace(" ", ""):
         return "calculation"
     return "unknown"
+
+
+def classify_discrete_subtype(problem_text: str, metadata: Dict[str, Any] | None = None) -> str:
+    """Classify a discrete-math problem into an existing Phase-B subtype.
+
+    Keyword scoring remains the base mechanism. Narrow structural boosts prevent
+    generic counting words from overriding more diagnostic mathematical forms.
+    """
+    metadata = metadata if isinstance(metadata, dict) else {}
+    text = " ".join(str(part or "") for part in _iter_hint_parts(problem_text, metadata)).lower()
+    # Explicitly requested methods outrank object vocabulary within the existing
+    # five discrete subtypes. No generic routing architecture changes are made.
+    if re.search(
+        r"\b(?:using|use|via|derive|with)\s+(?:an?\s+)?(?:ordinary\s+|exponential\s+)?generating\s+functions?\b"
+        r"|用生成函数|使用生成函数|通过生成函数",
+        text,
+    ):
+        return "generating_function"
+    if re.search(
+        r"\b(?:using|use|via|derive|solve\s+by|with)\s+(?:an?\s+)?recurrence\b"
+        r"|用递推|使用递推|通过递推",
+        text,
+    ):
+        return "recurrence"
+
+    scores: Dict[str, float] = {}
+    for subtype, keywords in DISCRETE_SUBTYPE_KEYWORDS.items():
+        score = 0.0
+        for keyword in keywords:
+            occurrences = len(re.findall(re.escape(keyword.lower()), text))
+            if occurrences:
+                score += occurrences * _keyword_weight(keyword)
+        if score:
+            scores[subtype] = score
+
+    structural_boosts = {
+        "generating_function": (
+            r"(?:ordinary|exponential)?\s*generating\s+function",
+            r"coefficient\s+of\s+x\^?\{?\d+\}?",
+            r"\[x\^",
+            r"生成函数|母函数|求.*?系数",
+        ),
+        "recurrence": (
+            r"\b[a-zA-Z]_[{]?n[}]?\s*=.*?[a-zA-Z]_[{]?n[-−]1[}]?",
+            r"closed\s+form.*?recurrence|recurrence.*?closed\s+form",
+            r"递推(?:关系|式)?.*?[a-zA-Z]?_?n",
+        ),
+        "graph_theory": (
+            r"spanning\s+tree|complete\s+(?:bi)?partite\s+graph|complete\s+graph",
+            r"\bgraph\b|\bvertices?\b|\bedges?\b|\bmatching\b|\bcoloring\b",
+            r"图论|生成树|顶点|匹配|染色|度数",
+        ),
+        "number_theory_modular": (
+            r"≡|\\equiv|\bcongruence\b|\bmod(?:ulo)?\b|chinese\s+remainder|\bcrt\b",
+            r"同余|中国剩余|模\s*\d+|余数",
+        ),
+        "combinatorial_counting": (
+            r"binary\s+strings?|choose\s+\d+.*?from\s+\d+|in\s+how\s+many\s+ways",
+            r"ordered\s+selections?|inclusion[- ]exclusion|pigeonhole|permutations?|subsets?|stars[- ]and[- ]bars",
+            r"(?:nonnegative|non-negative|positive)\s+integer\s+(?:tuples?|pairs?|triples?|solutions?)",
+            r"二进制(?:字符串|串)|多少种|多少个|容斥|排列|组合",
+        ),
+    }
+    for subtype, patterns in structural_boosts.items():
+        hits = sum(1 for pattern in patterns if re.search(pattern, text))
+        if hits:
+            scores[subtype] = scores.get(subtype, 0.0) + 5.0 * hits
+
+    if not scores:
+        return "general_discrete"
+    ranked = sorted(
+        scores.items(),
+        key=lambda item: (-item[1], _DISCRETE_SUBTYPE_PRIORITY.index(item[0])),
+    )
+    return ranked[0][0]
 
 
 def estimate_verifiability(domain: str, task_type: str) -> str:
@@ -258,12 +372,14 @@ def classify_problem(problem_text: str, metadata: Dict[str, Any] | None = None, 
     task_type = explicit_task_type if explicit_task_type in _TASK_TYPES else classify_task_type(problem_text)
     verifiability = estimate_verifiability(domains[0], task_type)
     difficulty = estimate_difficulty(problem_text, domains[0], task_type, verifiability)
+    discrete_subtype = classify_discrete_subtype(problem_text, metadata) if domains[0] == "discrete_math" else None
     return {
         "primary_domain": domains[0],
         "domain_candidates": domains,
         "task_type": task_type,
         "verifiability": verifiability,
         "difficulty": difficulty,
+        "discrete_subtype": discrete_subtype,
         "scores": {domain: round(score, 3) for domain, score in ranked[:limit]},
         "priors": {domain: BENCHMARK_DOMAIN_PRIORS.get(domain, 0.0) for domain in domains},
     }

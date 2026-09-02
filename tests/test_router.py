@@ -83,3 +83,12 @@ def test_router_adds_deterministic_difficulty():
     assert easy["difficulty"] in {"easy", "medium"}
     assert hard["difficulty"] == "hard"
     assert estimate_difficulty("1+1", "linear_algebra", "calculation", "high") == "easy"
+
+
+
+def test_router_classifies_discrete_subtypes():
+    assert classify_problem("用容斥原理计算满足条件的排列个数。", {})["discrete_subtype"] == "combinatorial_counting"
+    assert classify_problem("求递推关系 a_n=a_{n-1}+a_{n-2} 的通项。", {})["discrete_subtype"] == "recurrence"
+    assert classify_problem("用生成函数求整数分拆数。", {})["discrete_subtype"] == "generating_function"
+    assert classify_problem("设 G 为连通图，证明存在生成树。", {})["discrete_subtype"] == "graph_theory"
+    assert classify_problem("计算 2^100 模 7 的余数。", {})["discrete_subtype"] == "number_theory_modular"

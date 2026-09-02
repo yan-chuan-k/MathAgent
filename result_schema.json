@@ -199,7 +199,10 @@
               "vector_orthogonality",
               "vector_normalization",
               "matrix_equivalence",
-              "vector_equivalence"
+              "vector_equivalence",
+              "small_case_enumeration",
+              "recurrence_check",
+              "modular_check"
             ]
           },
           "arguments": {

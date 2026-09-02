@@ -16,7 +16,12 @@ from .schema import empty_result
 from .search import choose_strategy_budget, compare_candidate_answers, rank_candidates, strategies_for_domain
 from .state import EvidenceStatus, FailureKind, OverallStatus, SolveAssessment, SolveState, VerificationEvidence, VerificationLevel
 from .tools import run_sympy_verification
-from .verifiers import check_completeness, run_linear_algebra_verification, run_system_inferred_matrix_verification
+from .verifiers import (
+    check_completeness,
+    run_discrete_math_verification,
+    run_linear_algebra_verification,
+    run_system_inferred_matrix_verification,
+)
 
 
 class MathAgentOrchestrator:
@@ -135,7 +140,7 @@ class MathAgentOrchestrator:
             ):
                 primary_domain = str(route_hint.get("primary_domain") or "unknown")
                 alternate = next(
-                    (item for item in strategies_for_domain(primary_domain) if item not in strategies),
+                    (item for item in strategies_for_domain(primary_domain, route_hint.get("discrete_subtype")) if item not in strategies),
                     None,
                 )
                 if alternate:
@@ -172,6 +177,7 @@ class MathAgentOrchestrator:
             "enable_critic": self.enable_critic,
             "enable_finalizer": self.enable_finalizer,
             "difficulty": route_hint.get("difficulty", "medium"),
+            "discrete_subtype": route_hint.get("discrete_subtype"),
             "candidate_comparison": comparison,
             **self._run_metrics,
         }
@@ -225,7 +231,7 @@ class MathAgentOrchestrator:
         route_hint: Dict[str, Any],
     ) -> list[str]:
         primary_domain = route_hint.get("primary_domain") or "unknown"
-        pool = strategies_for_domain(str(primary_domain))
+        pool = strategies_for_domain(str(primary_domain), route_hint.get("discrete_subtype"))
         task_type = str(route_hint.get("task_type") or problem.get("task_type") or "unknown")
         verifiability = str(route_hint.get("verifiability") or "low")
         difficulty = str(route_hint.get("difficulty") or "medium")
@@ -376,7 +382,7 @@ class MathAgentOrchestrator:
         validation = validate_result(result, self.schema)
         result["_meta"]["schema_valid"] = validation.valid
         result["_meta"]["schema_error"] = validation.error
-        evidence = self._run_verifiers(problem_text, result) if self.enable_tool_verify else []
+        evidence = self._run_verifiers(problem_text, result, route_hint=route_hint) if self.enable_tool_verify else []
         assessment = self._assess_result(result, validation, evidence)
         self._apply_assessment(result, assessment)
         final_validation = validate_result(result, self.schema)
@@ -654,7 +660,12 @@ class MathAgentOrchestrator:
         with open(schema_path, "r", encoding="utf-8") as file:
             return json.load(file)
 
-    def _run_verifiers(self, problem_text: str, result: Dict[str, Any]) -> list[VerificationEvidence]:
+    def _run_verifiers(
+        self,
+        problem_text: str,
+        result: Dict[str, Any],
+        route_hint: Dict[str, Any] | None = None,
+    ) -> list[VerificationEvidence]:
         answer = ""
         final_answer = result.get("final_answer")
         if isinstance(final_answer, dict):
@@ -664,6 +675,28 @@ class MathAgentOrchestrator:
             evidence.extend(run_system_inferred_matrix_verification(problem_text, answer))
         except Exception:
             pass
+        routed_domain = str((route_hint or {}).get("primary_domain") or "")
+        result_domains = result.get("domain_candidates") if isinstance(result.get("domain_candidates"), list) else []
+        is_discrete = (
+            routed_domain == "discrete_math"
+            or str(result.get("problem_type") or "") == "discrete_math"
+            or "discrete_math" in result_domains
+        )
+        if is_discrete:
+            try:
+                evidence.extend(run_discrete_math_verification(problem_text, answer, result))
+            except Exception as exc:
+                evidence.append(
+                    VerificationEvidence(
+                        verifier="discrete_math",
+                        claim_id="verifier_error",
+                        status=EvidenceStatus.INCONCLUSIVE.value,
+                        method="exception_boundary",
+                        details=f"{type(exc).__name__}: {str(exc)[:220]}",
+                        verification_level=VerificationLevel.EXACT_ENUMERATION.value,
+                        is_decisive=False,
+                    )
+                )
         try:
             evidence.extend(run_sympy_verification(problem_text=problem_text, answer=answer, result=result))
         except Exception as exc:
