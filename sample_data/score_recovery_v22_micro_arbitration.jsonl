@@ -1,0 +1,71 @@
+{"idx": "micro_num_01", "domain": "numerical_analysis", "problem": "Use Newton interpolation with divided differences to construct the degree-3 interpolating polynomial.", "expected_micro": "interpolation"}
+{"idx": "micro_num_02", "domain": "numerical_analysis", "problem": "Apply one Newton iteration step to f(x)=x^3-2=0 starting from x0=1.", "expected_micro": "newton_fixed_point"}
+{"idx": "micro_num_03", "domain": "numerical_analysis", "problem": "A zero-stable method has local truncation error O(h^3). Determine its global order.", "expected_micro": "stability_convergence"}
+{"idx": "micro_num_04", "domain": "numerical_analysis", "problem": "Derive the central-difference approximation using f(x+h) and f(x-h), including its truncation error.", "expected_micro": "finite_difference_error"}
+{"idx": "micro_num_05", "domain": "numerical_analysis", "problem": "Apply Simpson's rule on [0,2] and track the interval scaling factor.", "expected_micro": "quadrature"}
+{"idx": "micro_num_06", "domain": "numerical_analysis", "problem": "Use Newton divided differences, not root finding, to interpolate the data.", "expected_micro": "interpolation"}
+{"idx": "micro_num_07", "domain": "numerical_analysis", "problem": "对 f(x)=0 使用牛顿迭代，求下一次迭代值。", "expected_micro": "newton_fixed_point"}
+{"idx": "micro_num_08", "domain": "numerical_analysis", "problem": "该方法零稳定，且局部截断误差为 O(h^3)，求全局误差阶。", "expected_micro": "stability_convergence"}
+{"idx": "micro_meas_01", "domain": "measure_integration", "problem": "Let f_n>=0 be measurable and f_n ↑ f. Which convergence theorem identifies lim integral f_n?", "expected_micro": "limit_integral"}
+{"idx": "micro_meas_02", "domain": "measure_integration", "problem": "Use dominated convergence to justify interchanging the limit and the integral.", "expected_micro": "limit_integral"}
+{"idx": "micro_meas_03", "domain": "measure_integration", "problem": "Assume absolute integrability on the product space. Use Fubini to exchange the order of integration.", "expected_micro": "fubini_tonelli"}
+{"idx": "micro_meas_04", "domain": "measure_integration", "problem": "Determine whether the pointwise supremum of the measurable functions is measurable.", "expected_micro": "measurability"}
+{"idx": "micro_meas_05", "domain": "measure_integration", "problem": "Use Holder's inequality to derive an L1 bound from an L2 norm on a finite-measure space.", "expected_micro": "lp_integrability"}
+{"idx": "micro_meas_06", "domain": "measure_integration", "problem": "函数列 f_n 可测且单调递增到 f，说明应使用哪个定理交换极限与积分。", "expected_micro": "limit_integral"}
+{"idx": "micro_meas_07", "domain": "measure_integration", "problem": "在乘积测度空间上满足绝对可积，交换积分次序应使用 Fubini 定理。", "expected_micro": "fubini_tonelli"}
+{"idx": "micro_geo_01", "domain": "differential_geometry", "problem": "Compute the Gaussian curvature of the parametrized surface at the given point.", "expected_micro": "curvature"}
+{"idx": "micro_geo_02", "domain": "differential_geometry", "problem": "Compute E,F,G and hence write the first fundamental form.", "expected_micro": "first_fundamental_form"}
+{"idx": "micro_geo_03", "domain": "differential_geometry", "problem": "Derive the geodesic equation from the Christoffel symbols.", "expected_micro": "geodesic_connection"}
+{"idx": "micro_geo_04", "domain": "differential_geometry", "problem": "Use the isometry to identify which quantity is intrinsic.", "expected_micro": "intrinsic_geometry"}
+{"idx": "micro_geo_05", "domain": "differential_geometry", "problem": "求该曲面的高斯曲率，并检查符号约定。", "expected_micro": "curvature"}
+{"idx": "micro_prob_01", "domain": "probability", "problem": "Given that at least one die shows six, compute the conditional probability that both show six.", "expected_micro": "conditioning_bayes"}
+{"idx": "micro_prob_02", "domain": "probability", "problem": "Derive the expected number of fixed points using indicator variables.", "expected_micro": "expectation_indicator"}
+{"idx": "micro_prob_03", "domain": "probability", "problem": "Identify the Poisson distribution and its parameter for the thinned count.", "expected_micro": "named_distribution"}
+{"idx": "micro_prob_04", "domain": "probability", "problem": "Apply the central limit theorem to the normalized sample mean.", "expected_micro": "limit_theorem"}
+{"idx": "micro_prob_05", "domain": "probability", "problem": "已知事件 B 已发生，求条件概率 P(A|B)。", "expected_micro": "conditioning_bayes"}
+{"idx": "micro_alg_01", "domain": "abstract_algebra", "problem": "In F_16, find the order of a multiplicative generator of the finite field.", "expected_micro": "finite_field_galois"}
+{"idx": "micro_alg_02", "domain": "abstract_algebra", "problem": "A group G has order 21. Use Sylow's theorem to find the number of Sylow 7-subgroups.", "expected_micro": "group_order_sylow"}
+{"idx": "micro_alg_03", "domain": "abstract_algebra", "problem": "Compute the kernel and image of the homomorphism and identify the quotient group.", "expected_micro": "homomorphism_quotient"}
+{"idx": "micro_alg_04", "domain": "abstract_algebra", "problem": "Determine whether the quotient ring R[x]/(x^2+1) is a field.", "expected_micro": "ring_ideal_field"}
+{"idx": "micro_alg_05", "domain": "abstract_algebra", "problem": "在有限域 F_16 中求乘法群生成元的阶。", "expected_micro": "finite_field_galois"}
+{"idx": "micro_stoch_01", "domain": "stochastic_process", "problem": "For this Markov chain, compute the stationary distribution by solving pi P = pi.", "expected_micro": "markov_stationary"}
+{"idx": "micro_stoch_02", "domain": "stochastic_process", "problem": "For this Markov chain, compute the expected hitting time of state 0.", "expected_micro": "markov_hitting"}
+{"idx": "micro_stoch_03", "domain": "stochastic_process", "problem": "For a Poisson process, determine the law of N(3)-N(1).", "expected_micro": "poisson_process"}
+{"idx": "micro_stoch_04", "domain": "stochastic_process", "problem": "Show that B_t^2-t is a martingale for standard Brownian motion.", "expected_micro": "brownian_martingale"}
+{"idx": "micro_stoch_05", "domain": "stochastic_process", "problem": "A Markov chain has the following transition matrix. Compute P(X_2=1).", "expected_micro": null}
+{"idx": "micro_stoch_06", "domain": "stochastic_process", "problem": "对马尔可夫链求首次到达状态 0 的期望时间。", "expected_micro": "markov_hitting"}
+{"idx": "micro_cx_01", "domain": "complex_analysis", "problem": "Evaluate the contour integral by the residue theorem.", "expected_micro": "residue_contour"}
+{"idx": "micro_cx_02", "domain": "complex_analysis", "problem": "Use the Cauchy integral formula on this contour to evaluate the integral.", "expected_micro": "cauchy_formula"}
+{"idx": "micro_cx_03", "domain": "complex_analysis", "problem": "Use the Cauchy differentiation formula to evaluate the integral with (z-a)^3.", "expected_micro": "cauchy_formula"}
+{"idx": "micro_cx_04", "domain": "complex_analysis", "problem": "Classify the singularity at z=0 and compute its residue.", "expected_micro": "laurent_singularity"}
+{"idx": "micro_cx_05", "domain": "complex_analysis", "problem": "Use Rouche's theorem to count the zeros inside |z|=2.", "expected_micro": "zeros_argument"}
+{"idx": "micro_cx_06", "domain": "complex_analysis", "problem": "The contour encloses one singularity. Parametrize the contour directly and compute the integral.", "expected_micro": null}
+{"idx": "micro_cx_07", "domain": "complex_analysis", "problem": "判断 z=0 的奇点类型，并计算该点留数。", "expected_micro": "laurent_singularity"}
+{"idx": "micro_ode_01", "domain": "ode", "problem": "Solve this separable ODE by separation of variables.", "expected_micro": "separable_linear_bernoulli"}
+{"idx": "micro_ode_02", "domain": "ode", "problem": "Solve the Euler-Cauchy equation and handle the repeated characteristic root.", "expected_micro": "constant_coefficient_euler_cauchy"}
+{"idx": "micro_ode_03", "domain": "ode", "problem": "Find all equilibrium points and classify their stability with a phase line.", "expected_micro": "equilibrium_stability"}
+{"idx": "micro_stat_01", "domain": "statistics", "problem": "Derive the maximum likelihood estimator from the likelihood function.", "expected_micro": "likelihood_mle"}
+{"idx": "micro_stat_02", "domain": "statistics", "problem": "Find a sufficient statistic using the factorization theorem.", "expected_micro": "bias_variance_sufficiency"}
+{"idx": "micro_stat_03", "domain": "statistics", "problem": "Carry out the z-test and state the null hypothesis and p-value.", "expected_micro": "hypothesis_test_ci"}
+{"idx": "micro_stat_04", "domain": "statistics", "problem": "Derive the MLE and determine whether it is unbiased.", "expected_micro": null}
+{"idx": "micro_fa_01", "domain": "functional_analysis", "problem": "Prove that a bounded linear operator is continuous and compute its operator norm.", "expected_micro": "bounded_operator_continuity"}
+{"idx": "micro_fa_02", "domain": "functional_analysis", "problem": "Determine whether the identity is a compact operator on l2.", "expected_micro": "compactness"}
+{"idx": "micro_fa_03", "domain": "functional_analysis", "problem": "Determine the spectrum and whether the operator is invertible.", "expected_micro": "spectrum_invertibility"}
+{"idx": "micro_lr_01", "domain": "linear_regression", "problem": "Under full column rank, derive the OLS estimator and Var(beta_hat).", "expected_micro": "ols_full_rank"}
+{"idx": "micro_lr_02", "domain": "linear_regression", "problem": "X is rank deficient; explain nonuniqueness and use the Moore-Penrose pseudoinverse.", "expected_micro": "rank_deficiency_pseudoinverse"}
+{"idx": "micro_lr_03", "domain": "linear_regression", "problem": "Construct a confidence interval for a regression coefficient using its standard error.", "expected_micro": "sampling_inference"}
+{"idx": "micro_pde_01", "domain": "pde", "problem": "Solve the heat equation by separation of variables with zero Dirichlet boundary conditions.", "expected_micro": "heat_wave_separation"}
+{"idx": "micro_pde_02", "domain": "pde", "problem": "Solve the transport equation by the method of characteristics.", "expected_micro": "transport_characteristics"}
+{"idx": "micro_pde_03", "domain": "pde", "problem": "Use the Fourier transform to obtain the fundamental solution.", "expected_micro": "transform_fundamental_solution"}
+{"idx": "micro_la_01", "domain": "linear_algebra", "problem": "Use rank-nullity to determine the nullity of the linear system.", "expected_micro": "rank_system"}
+{"idx": "micro_la_02", "domain": "linear_algebra", "problem": "Determine the Jordan blocks from the minimal polynomial.", "expected_micro": "eigen_jordan"}
+{"idx": "micro_la_03", "domain": "linear_algebra", "problem": "Classify the quadratic form as positive definite using the spectral theorem.", "expected_micro": "quadratic_form_spectral"}
+{"idx": "micro_opt_01", "domain": "optimization", "problem": "Use KKT conditions and complementary slackness for this convex inequality-constrained problem.", "expected_micro": "kkt_convex"}
+{"idx": "micro_opt_02", "domain": "optimization", "problem": "Use Lagrange multipliers for the equality constraint and compare boundary cases.", "expected_micro": "lagrange_boundary"}
+{"idx": "micro_opt_03", "domain": "optimization", "problem": "For the unconstrained minimum, solve the stationary equations and classify with the Hessian.", "expected_micro": "unconstrained_hessian"}
+{"idx": "micro_ra_01", "domain": "real_analysis", "problem": "Decide whether x^n converges pointwise but not uniformly on [0,1].", "expected_micro": "uniform_pointwise"}
+{"idx": "micro_ra_02", "domain": "real_analysis", "problem": "Determine whether the series converges absolutely using a convergence test.", "expected_micro": "sequence_series_convergence"}
+{"idx": "micro_ra_03", "domain": "real_analysis", "problem": "Use compactness of the interval to prove the continuous function is uniformly continuous.", "expected_micro": "compactness_continuity"}
+{"idx": "micro_top_01", "domain": "topology", "problem": "A continuous bijection maps a compact space to a Hausdorff space. Show it is a homeomorphism.", "expected_micro": "compact_hausdorff"}
+{"idx": "micro_top_02", "domain": "topology", "problem": "Show that the continuous image of a connected space is connected.", "expected_micro": "connectedness"}
+{"idx": "micro_top_03", "domain": "topology", "problem": "Use the quotient topology definition to verify that the quotient map is continuous.", "expected_micro": "continuity_quotient"}

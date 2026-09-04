@@ -56,13 +56,18 @@ def evaluate(
     run_agent: bool,
     thinking_mode: bool,
     include_ids: set[str] | None = None,
+    production_mode: str = "score_first",
 ) -> Dict[str, Any]:
     items = load_jsonl(input_file)
     if include_ids:
         items = [item for item in items if str(item.get("idx", "")) in include_ids]
     raw_client = build_client(use_mock=use_mock, thinking_mode=thinking_mode) if run_agent else None
     client = CountingClient(raw_client) if raw_client is not None else None
-    agent = ReasoningAgent(client=client, thinking_mode=thinking_mode, production_mode="orchestrated") if client is not None else None
+    agent = (
+        ReasoningAgent(client=client, thinking_mode=thinking_mode, production_mode=production_mode)
+        if client is not None
+        else None
+    )
     rows = []
     route_hits = 0
     valid_outputs = 0
@@ -90,7 +95,14 @@ def evaluate(
         metadata = {
             key: value
             for key, value in item.items()
-            if key not in {"problem", "answer", "expected_answer", "grading", "answer_hint"}
+            if key not in {
+                "problem",
+                "answer",
+                "expected_answer",
+                "grading",
+                "answer_hint",
+                "expected_micro",
+            }
         }
         route = classify_problem(problem, metadata)
         expected = str(item.get("expected_domain", ""))
@@ -172,6 +184,7 @@ def evaluate(
         "route_accuracy": route_hits / len(items) if items else 0.0,
         "run_agent": run_agent,
         "use_mock": use_mock,
+        "production_mode": production_mode,
         "valid_outputs": valid_outputs,
         "answer_evaluated": answer_evaluated,
         "answer_correct": answer_correct,
@@ -263,6 +276,12 @@ def main() -> None:
     parser.add_argument("--mock", action="store_true", help="Use MockClient for offline pipeline checks.")
     parser.add_argument("--run-agent", action="store_true", help="Call ReasoningAgent in addition to route checks.")
     parser.add_argument("--no-thinking-mode", action="store_true")
+    parser.add_argument(
+        "--production-mode",
+        choices=("score_first", "orchestrated"),
+        default="score_first",
+        help="Use ScoreFirst by default; select orchestrated only for explicit legacy diagnostics.",
+    )
     parser.add_argument("--idx", action="append", help="Run only the case with this idx. Can be repeated.")
     args = parser.parse_args()
 
@@ -273,6 +292,7 @@ def main() -> None:
         run_agent=args.run_agent,
         thinking_mode=not args.no_thinking_mode,
         include_ids=set(args.idx) if args.idx else None,
+        production_mode=args.production_mode,
     )
     print_summary(summary)
 

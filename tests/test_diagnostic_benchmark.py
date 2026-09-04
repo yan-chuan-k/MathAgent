@@ -35,6 +35,7 @@ def test_benchmark_reports_accuracy_and_model_calls_without_leaking_answer(tmp_p
         use_mock=True,
         run_agent=True,
         thinking_mode=True,
+        production_mode="orchestrated",
     )
 
     assert summary["answer_accuracy"] == 1.0
@@ -77,7 +78,9 @@ def test_full_problem_accuracy_counts_single_claim_problems(tmp_path, monkeypatc
     path.write_text(json.dumps({"idx": 1, "problem": "Compute 1+1.", "expected_answer": "2"}) + "\n", encoding="utf-8")
     scripted = ScriptedClient([_correct_response()] * 6)
     monkeypatch.setattr(diagnose_hard_cases, "build_client", lambda **kwargs: scripted)
-    summary = diagnose_hard_cases.evaluate(path, tmp_path / "summary.json", True, True, True)
+    summary = diagnose_hard_cases.evaluate(
+        path, tmp_path / "summary.json", True, True, True, production_mode="orchestrated"
+    )
     assert summary["full_problem_accuracy"] == 1.0
 
 
@@ -95,7 +98,9 @@ def test_full_problem_accuracy_requires_all_gradable_claims(tmp_path, monkeypatc
     response["final_answer"]["answer"] = "2"
     scripted = ScriptedClient([response] * 6)
     monkeypatch.setattr(diagnose_hard_cases, "build_client", lambda **kwargs: scripted)
-    summary = diagnose_hard_cases.evaluate(path, tmp_path / "summary.json", True, True, True)
+    summary = diagnose_hard_cases.evaluate(
+        path, tmp_path / "summary.json", True, True, True, production_mode="orchestrated"
+    )
     assert summary["primary_answer_accuracy"] == 1.0
     assert summary["full_problem_accuracy"] == 0.0
     assert summary["required_claim_unresolved_count"] == 0

@@ -1,0 +1,28 @@
+{"idx": "v25check_001", "subject": "discrete_math", "problem": "How many 4-element subsets can be chosen from 10 objects?", "expected_verification_key": "discrete:combinatorial_counting"}
+{"idx": "v25check_002", "subject": "discrete_math", "problem": "Given a_0=1 and a_n=2a_{n-1}+1, compute a_4.", "expected_verification_key": "discrete:recurrence"}
+{"idx": "v25check_003", "subject": "discrete_math", "problem": "Using a generating function, find the coefficient of x^5 in (1-x)^(-2).", "expected_verification_key": "discrete:generating_function"}
+{"idx": "v25check_004", "subject": "discrete_math", "problem": "A simple graph has vertex degrees 3,3,2,2. Determine the number of edges.", "expected_verification_key": "discrete:graph_theory"}
+{"idx": "v25check_005", "subject": "discrete_math", "problem": "Solve x ≡ 3 (mod 7) and x ≡ 4 (mod 5).", "expected_verification_key": "discrete:number_theory_modular"}
+{"idx": "v25check_006", "subject": "numerical_analysis", "problem": "Apply one Newton iteration step to f(x)=x^2-2=0 from x0=1.", "expected_verification_key": "micro:newton_fixed_point"}
+{"idx": "v25check_007", "subject": "numerical_analysis", "problem": "Use Newton interpolation with divided differences to evaluate the interpolant at x=2.", "expected_verification_key": "micro:interpolation"}
+{"idx": "v25check_008", "subject": "numerical_analysis", "problem": "Apply Simpson's rule to approximate the integral on [0,2].", "expected_verification_key": "micro:quadrature"}
+{"idx": "v25check_009", "subject": "probability", "problem": "Given that a medical test is positive, compute the posterior probability of disease using Bayes' theorem.", "expected_verification_key": "micro:conditioning_bayes"}
+{"idx": "v25check_010", "subject": "probability", "problem": "Compute the expected number of fixed points using indicator variables.", "expected_verification_key": "micro:expectation_indicator"}
+{"idx": "v25check_011", "subject": "abstract_algebra", "problem": "A group has order 21. Use Sylow's theorem to determine the number of Sylow 7-subgroups.", "expected_verification_key": "micro:group_order_sylow"}
+{"idx": "v25check_012", "subject": "abstract_algebra", "problem": "For the homomorphism phi:G->H, determine ker phi and im phi.", "expected_verification_key": "micro:homomorphism_quotient"}
+{"idx": "v25check_013", "subject": "abstract_algebra", "problem": "In the finite field F_16, determine the order of a multiplicative generator.", "expected_verification_key": "micro:finite_field_galois"}
+{"idx": "v25check_014", "subject": "stochastic_process", "problem": "For the Markov chain with transition matrix P, find the stationary distribution.", "expected_verification_key": "micro:markov_stationary"}
+{"idx": "v25check_015", "subject": "stochastic_process", "problem": "For this Markov chain, compute the expected hitting time of state 0.", "expected_verification_key": "micro:markov_hitting"}
+{"idx": "v25check_016", "subject": "complex_analysis", "problem": "Evaluate the contour integral using the residue theorem.", "expected_verification_key": "micro:residue_contour"}
+{"idx": "v25check_017", "subject": "complex_analysis", "problem": "Use the Cauchy integral formula to evaluate the contour integral.", "expected_verification_key": "micro:cauchy_formula"}
+{"idx": "v25check_018", "subject": "complex_analysis", "problem": "Classify the singularity at z=0 using a Laurent expansion and compute its residue.", "expected_verification_key": "micro:laurent_singularity"}
+{"idx": "v25check_019", "subject": "statistics", "problem": "Derive the maximum likelihood estimator for theta from the likelihood function.", "expected_verification_key": "micro:likelihood_mle"}
+{"idx": "v25check_020", "subject": "statistics", "problem": "Construct a 95% confidence interval using the t distribution.", "expected_verification_key": "micro:hypothesis_test_ci"}
+{"idx": "v25check_021", "subject": "linear_regression", "problem": "Under full column rank, derive the ordinary least squares estimator beta_hat.", "expected_verification_key": "micro:ols_full_rank"}
+{"idx": "v25check_022", "subject": "linear_regression", "problem": "Construct a prediction interval for a new observation at x0.", "expected_verification_key": "micro:sampling_inference"}
+{"idx": "v25check_023", "subject": "linear_algebra", "problem": "Determine the Jordan form from the eigenvalue multiplicities and eigenspace dimensions.", "expected_verification_key": "micro:eigen_jordan"}
+{"idx": "v25check_024", "subject": "optimization", "problem": "Use KKT conditions and complementary slackness to solve the convex constrained problem.", "expected_verification_key": "micro:kkt_convex"}
+{"idx": "v25check_025", "subject": "real_analysis", "problem": "Determine whether f_n converges uniformly on [0,1].", "expected_verification_key": "micro:uniform_pointwise"}
+{"idx": "v25check_026", "subject": "functional_analysis", "problem": "Determine whether I-T is invertible for the specified bounded operator T.", "expected_verification_key": "micro:spectrum_invertibility"}
+{"idx": "v25check_027", "subject": "ode", "problem": "Solve y''-3y'+2y=0 with y(0)=1 and y'(0)=0.", "expected_verification_key": "domain:ode"}
+{"idx": "v25check_028", "subject": "pde", "problem": "Solve the heat equation by separation of variables with the stated boundary and initial data.", "expected_verification_key": "domain:pde"}

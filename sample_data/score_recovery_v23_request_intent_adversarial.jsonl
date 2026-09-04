@@ -1,0 +1,16 @@
+{"idx": "v23intent_001", "problem": "Is it possible to establish compactness by a proof? Answer only yes or no.", "expected_mode": "ANSWER_VALUE"}
+{"idx": "v23intent_002", "problem": "Building the interpolation polynomial is unnecessary; calculate its value at t=0.25.", "expected_mode": "ANSWER_VALUE"}
+{"idx": "v23intent_003", "problem": "Explain which of the listed statements is valid.", "expected_mode": "DERIVATION"}
+{"idx": "v23intent_004", "problem": "Which choice is valid? Give the reason for your selection.", "expected_mode": "DERIVATION"}
+{"idx": "v23intent_005", "problem": "请选择最合适的结论，并说明原因。", "expected_mode": "DERIVATION"}
+{"idx": "v23intent_006", "problem": "以下哪个断言成立？请说明理由。", "expected_mode": "DERIVATION"}
+{"idx": "v23intent_007", "problem": "无需给出证明，只需说明应使用哪条定理。", "expected_mode": "DERIVATION"}
+{"idx": "v23intent_008", "problem": "不必给出证明，请解释为什么结论成立。", "expected_mode": "DERIVATION"}
+{"idx": "v23intent_009", "problem": "Give an example showing that the reverse implication does not hold.", "expected_mode": "CONSTRUCTION_COUNTEREXAMPLE"}
+{"idx": "v23intent_010", "problem": "Find an example for which the proposed statement is false.", "expected_mode": "CONSTRUCTION_COUNTEREXAMPLE"}
+{"idx": "v23intent_011", "problem": "Exhibit an example violating the claimed converse.", "expected_mode": "CONSTRUCTION_COUNTEREXAMPLE"}
+{"idx": "v23intent_012", "problem": "Prove or disprove: every bounded operator is compact.", "expected_mode": "PROOF_OR_DISPROOF"}
+{"idx": "v23intent_013", "problem": "证明或反驳：每个连续双射都是同胚。", "expected_mode": "PROOF_OR_DISPROOF"}
+{"idx": "v23intent_014", "problem": "The derivation above uses Taylor expansion. Compute the numerical error at h=0.1.", "expected_mode": "ANSWER_VALUE"}
+{"idx": "v23intent_015", "problem": "A counterexample was discussed above. Which option gives the correct numerical value?", "expected_mode": "ANSWER_VALUE"}
+{"idx": "v23intent_016", "problem": "Verify numerically that the proposed root satisfies the equation.", "expected_mode": "DERIVATION"}

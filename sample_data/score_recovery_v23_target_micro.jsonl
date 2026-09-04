@@ -1,0 +1,15 @@
+{"idx": "v23target_001", "domain": "functional_analysis", "problem": "Let T be a compact operator on a Banach space. Determine whether I-T is invertible.", "expected_micro": "spectrum_invertibility"}
+{"idx": "v23target_002", "domain": "functional_analysis", "problem": "Let T be a compact operator. Prove that T is continuous.", "expected_micro": "bounded_operator_continuity"}
+{"idx": "v23target_003", "domain": "statistics", "problem": "Assume a normal model. Find the bias and variance of the MLE.", "expected_micro": "bias_variance_sufficiency"}
+{"idx": "v23target_004", "domain": "statistics", "problem": "Given the MLE of mu, construct a 95% confidence interval for mu.", "expected_micro": "hypothesis_test_ci"}
+{"idx": "v23target_005", "domain": "probability", "problem": "Let X have a normal distribution. Compute E[X^2].", "expected_micro": "expectation_indicator"}
+{"idx": "v23target_006", "domain": "linear_regression", "problem": "Under a full-rank OLS model, construct a prediction interval at x0.", "expected_micro": "sampling_inference"}
+{"idx": "v23target_007", "domain": "differential_geometry", "problem": "Given the first fundamental form E,F,G, compute the Gaussian curvature.", "expected_micro": "curvature"}
+{"idx": "v23target_008", "domain": "pde", "problem": "For the heat equation on R^n, find its fundamental solution.", "expected_micro": "transform_fundamental_solution"}
+{"idx": "v23target_009", "domain": "abstract_algebra", "problem": "Let G be a group of order 21 and phi:G->H a homomorphism. Determine ker phi.", "expected_micro": "homomorphism_quotient"}
+{"idx": "v23target_010", "domain": "real_analysis", "problem": "Let f_n be continuous on a compact interval. Determine whether f_n converges uniformly.", "expected_micro": "uniform_pointwise"}
+{"idx": "v23target_011", "domain": "topology", "problem": "Let X be compact Hausdorff and f:X->Y continuous. Determine whether f(X) is connected.", "expected_micro": "connectedness"}
+{"idx": "v23target_012", "domain": "functional_analysis", "problem": "Let T be a compact operator. Compute 2+2.", "expected_micro": null}
+{"idx": "v23target_013", "domain": "pde", "problem": "For the heat equation on a bounded interval, use separation of variables with zero Dirichlet data.", "expected_micro": "heat_wave_separation"}
+{"idx": "v23target_014", "domain": "statistics", "problem": "The estimator is called an MLE. Determine its bias and variance.", "expected_micro": "bias_variance_sufficiency"}
+{"idx": "v23target_015", "domain": "probability", "problem": "X is Gaussian. Determine the expected value E[X^2].", "expected_micro": "expectation_indicator"}
