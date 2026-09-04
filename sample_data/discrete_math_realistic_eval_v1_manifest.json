@@ -1,0 +1,8 @@
+{
+  "name": "discrete_math_realistic_eval_v1",
+  "sha256": "ee555e3487bf76b5a47120fa1b364a7f6b3b641e2e1acba2a0d32a92450d4f76",
+  "rows": 100,
+  "role": "V2 development/decision set",
+  "freeze_policy": "Do not modify after decision-grade Solver evaluation begins.",
+  "post_v2_policy": "Freeze a separate holdout before implementation; do not claim unbiased post-V2 generalization using only this development/decision set."
+}

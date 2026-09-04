@@ -54,7 +54,7 @@ def test_user_agent_repairs_missing_gaussian_curvature_value():
                 '"confidence": 1.0}}'
             )
 
-    agent = ReasoningAgent(client=CurvatureClient())
+    agent = ReasoningAgent(client=CurvatureClient(), production_mode="orchestrated")
     result = agent.solve("计算单位球面的高斯曲率。", {"idx": 1, "subject": "微分几何"})
 
     assert result["final_response"].strip()

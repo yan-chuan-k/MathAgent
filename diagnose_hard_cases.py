@@ -62,7 +62,7 @@ def evaluate(
         items = [item for item in items if str(item.get("idx", "")) in include_ids]
     raw_client = build_client(use_mock=use_mock, thinking_mode=thinking_mode) if run_agent else None
     client = CountingClient(raw_client) if raw_client is not None else None
-    agent = ReasoningAgent(client=client, thinking_mode=thinking_mode) if client is not None else None
+    agent = ReasoningAgent(client=client, thinking_mode=thinking_mode, production_mode="orchestrated") if client is not None else None
     rows = []
     route_hits = 0
     valid_outputs = 0

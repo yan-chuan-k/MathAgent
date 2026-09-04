@@ -84,7 +84,7 @@ def test_reasoning_agent_does_not_recover_unverified_raw_output():
         ]
     )
 
-    agent = ReasoningAgent(client=client, max_retries=0)
+    agent = ReasoningAgent(client=client, max_retries=0, production_mode="orchestrated")
     result = agent.solve("1+1=?", {"idx": 0})
 
     assert result["final_response"]
