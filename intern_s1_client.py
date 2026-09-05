@@ -51,21 +51,25 @@ class InternS1Client:
         self,
         messages,
         temperature: Optional[float] = None,
+        top_p: Optional[float] = None,
         max_tokens: Optional[int] = None,
         thinking_mode: Optional[bool] = None,
     ) -> str:
         last_error = None
         for attempt in range(1, self.retry + 1):
             try:
-                response = self.client.chat.completions.create(
-                    model=self.model,
-                    messages=messages,
-                    temperature=self.temperature if temperature is None else temperature,
-                    max_tokens=self.max_tokens if max_tokens is None else max_tokens,
-                    extra_body={
+                request_kwargs = {
+                    "model": self.model,
+                    "messages": messages,
+                    "temperature": self.temperature if temperature is None else temperature,
+                    "max_tokens": self.max_tokens if max_tokens is None else max_tokens,
+                    "extra_body": {
                         "thinking_mode": self.thinking_mode if thinking_mode is None else thinking_mode
                     },
-                )
+                }
+                if top_p is not None:
+                    request_kwargs["top_p"] = top_p
+                response = self.client.chat.completions.create(**request_kwargs)
                 content = response.choices[0].message.content
                 if not content:
                     raise RuntimeError("Intern-S1 returned empty content")

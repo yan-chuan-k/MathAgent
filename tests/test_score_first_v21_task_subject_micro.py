@@ -400,8 +400,8 @@ def test_v21_preserves_one_call_budget_for_100_mixed_mode_successes():
         result = agent.solve(problems[mode], {"subject": "Advanced Math"})
         assert result["final_response"]
     assert len(client.calls) == 100
-    assert all(call["temperature"] == 0.1 for call in client.calls)
-    assert all(call["max_tokens"] == 8192 for call in client.calls)
+    assert all(call["temperature"] == 0.8 for call in client.calls)
+    assert all(call["max_tokens"] == 32768 for call in client.calls)
     assert all(call["thinking_mode"] is True for call in client.calls)
 
 

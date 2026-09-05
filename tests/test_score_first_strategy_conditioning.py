@@ -100,8 +100,8 @@ def test_score_first_selects_exactly_one_compact_domain_strategy(domain, problem
         if other_domain != domain:
             assert other_card not in prompt
 
-    assert call["temperature"] == 0.1
-    assert call["max_tokens"] == 8192
+    assert call["temperature"] == 0.8
+    assert call["max_tokens"] == 32768
     assert call["thinking_mode"] is True
     assert "OUTPUT_CONTRACT" not in prompt
     assert "Return exactly one valid JSON object" not in prompt

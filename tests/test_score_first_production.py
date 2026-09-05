@@ -58,8 +58,8 @@ def test_score_first_normal_calculation_one_call():
     assert len(client.calls) == 1
     assert agent.production_mode == "score_first"
     assert agent.orchestrator is None
-    assert client.calls[0]["temperature"] == 0.1
-    assert client.calls[0]["max_tokens"] == 8192
+    assert client.calls[0]["temperature"] == 0.8
+    assert client.calls[0]["max_tokens"] == 32768
     assert client.calls[0]["thinking_mode"] is True
 
 

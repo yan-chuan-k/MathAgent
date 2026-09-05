@@ -10,39 +10,19 @@ from math_agent_core.trace_utils import make_trace_step, sanitize_trace, trace_f
 
 
 _SCORE_FIRST_ANSWER_SYSTEM_PROMPT = """You are a high-accuracy mathematics competition solver.
-
-Solve the problem carefully using internal reasoning.
-
 Output exactly ONE visible line:
-
 Final answer: <complete requested answer>
-
 Then stop.
-
-Do not output JSON.
-Do not repeat the problem.
+Do not output JSON. Do not repeat the problem.
 Do not provide visible explanation or derivation.
-
-Preserve all requested roots, conditions, intervals,
-moduli, matrices, vectors, sets, and multiple answer parts.
-
-The subject/strategy hint is advisory. If the mathematical structure of the problem
-indicates a different method, follow the problem itself.
-
+Preserve all requested roots, conditions, intervals, moduli, matrices, vectors, sets, and answer parts.
+The subject/strategy hint is advisory.
 """.strip()
 
 _SCORE_FIRST_PROOF_SYSTEM_PROMPT = """You are a high-accuracy mathematics competition solver.
-
 State the conclusion first, then give a concise but complete proof.
-
-Do not output JSON.
-Do not repeat the problem.
-
-Do not omit necessary logical steps merely to shorten the response.
-
-The subject/strategy hint is advisory. If the mathematical structure of the problem
-indicates a different method, follow the problem itself.
-
+No JSON or problem restatement. Do not omit necessary logical steps.
+The subject/strategy hint is advisory.
 """.strip()
 
 _SCORE_FIRST_DOMAIN_STRATEGIES = {
@@ -162,8 +142,14 @@ _SCORE_FIRST_DISCRETE_SUBTYPE_STRATEGIES = {
 }
 
 _SCORE_FIRST_EXACTNESS_DISCIPLINE = (
-    "By default, prefer an exact mathematical form; if approximation is requested, honor the requested precision. "
-    "Preserve units, domains, moduli, multiplicities, and all requested parts."
+    "Unless approximating, prefer an exact mathematical form; otherwise honor the requested precision. "
+    "Preserve units, domains, moduli, multiplicities."
+)
+
+_SCORE_FIRST_DECISIVE_REASONING = (
+    "Use a direct path. Restart only for a concrete error. "
+    "If the independent check fails, correct once; if it succeeds and all parts are covered, commit. "
+    "Do not re-derive a verified solution."
 )
 
 _SCORE_FIRST_DOMAIN_FINAL_CHECKS = {
@@ -225,6 +211,12 @@ _SCORE_FIRST_MICRO_FINAL_CHECKS = {
     "unconstrained_hessian": "Substitute into the gradient and verify the Hessian or global argument supports the claimed extremum.",
     "uniform_pointwise": "Check the supremum error over the whole domain, including endpoints or moving-peak locations.",
     "spectrum_invertibility": "Check the exact operator named in the target. Verify the applicable injectivity/surjectivity, bounded-inverse, Neumann-series, or spectral criterion; absence of eigenvectors alone is not enough.",
+    "limit_theorem": "Recheck centering/scaling and theorem assumptions; confirm the limiting/reference distribution and any continuity correction used.",
+    "poisson_process": "Recheck rate times interval length, Poisson support k>=0, and normalization or mean=variance; for thinning/superposition verify the transformed rate.",
+    "brownian_martingale": "Check the defining Brownian or martingale property actually requested; do not import Markov-chain first-step or stationarity reasoning.",
+    "zeros_argument": "Verify no zero/pole lies on the contour, track orientation and multiplicity, and check argument-principle count = zeros minus poles.",
+    "equilibrium_stability": "Recheck the equilibrium and the actual stability criterion: linearization/eigenvalues, phase-line sign, or Lyapunov argument; solving the ODE alone is insufficient.",
+    "bias_variance_sufficiency": "Check only the estimator property requested from the sampling model or the sufficiency criterion actually invoked.",
 }
 
 _SCORE_FIRST_TASK_FINAL_CHECKS = {
@@ -270,6 +262,23 @@ _SCORE_FIRST_TARGET_FINAL_CHECKS = {
     "generic_derivation": (
         "Independently validate the derived quantity by a cheap substitution, differentiation, dimension check, "
         "initial condition, coefficient comparison, or known special case appropriate to the target."
+    ),
+    "fixed_point_convergence": (
+        "Verify x*=g(x*) and the contraction/local derivative condition, e.g. |g'(x*)|<1 near x*; "
+        "use only the fixed-point hypotheses actually stated."
+    ),
+    "brownian_moment": (
+        "For Brownian motion, recheck E[B_t]=0, Var(B_t)=t and Cov(B_s,B_t)=min(s,t) when relevant."
+    ),
+    "martingale": (
+        "For a martingale claim, check integrability and the conditional-expectation or independent-increment step."
+    ),
+    "bias_variance": (
+        "Independently recompute the requested E[T] and/or Var(T) under the stated sampling model; compare E[T] "
+        "with the target parameter when bias/unbiasedness is requested."
+    ),
+    "sufficiency": (
+        "Verify the factorization or conditional-distribution criterion actually used establishes sufficiency."
     ),
 }
 
@@ -423,7 +432,7 @@ _SCORE_FIRST_PROTECTED_DOT_ABBREVIATIONS = (
 _SCORE_FIRST_ENGLISH_REQUEST_VERB_RE = re.compile(
     r"""
     \b(?:compute|calculate|evaluate|find|determine|solve|classify|identify|state|answer|
-       give|provide|prove|show|establish|derive|deduce|explain|justify|verify|
+       give|provide|prove|show|establish|demonstrate|derive|deduce|explain|justify|verify|
        construct|disprove|select|choose|exhibit|use|apply|differentiate|integrate|
        simplify|factor|factorize|expand|approximate|estimate|maximize|minimize|
        optimize|diagonalize|diagonalise|invert|normalize|normalise)\b
@@ -1585,10 +1594,13 @@ class ReasoningAgent:
             raise ValueError("production_mode must be 'score_first' or 'orchestrated'")
 
         self.max_retries = int(kwargs.get("max_retries", 1))
-        default_temperature = 0.1 if self.production_mode == "score_first" else 0.2
-        default_max_tokens = 8192 if self.production_mode == "score_first" else 4096
+        default_temperature = 0.8 if self.production_mode == "score_first" else 0.2
+        default_max_tokens = 32768 if self.production_mode == "score_first" else 4096
+        default_top_p = 0.95 if self.production_mode == "score_first" else None
         self.temperature = float(kwargs.get("temperature", default_temperature))
         self.max_tokens = int(kwargs.get("max_tokens", default_max_tokens))
+        top_p_value = kwargs.get("top_p", default_top_p)
+        self.top_p = None if top_p_value is None else float(top_p_value)
         self.thinking_mode = bool(kwargs.get("thinking_mode", True))
         self.max_candidates = int(kwargs.get("max_candidates", 2))
         self.orchestrator = None
@@ -1688,18 +1700,26 @@ class ReasoningAgent:
             "temperature": self.temperature,
             "max_tokens": self.max_tokens,
         }
-        if self._client_supports_thinking_mode():
+        if self.top_p is not None and self._client_supports_parameter("top_p"):
+            kwargs["top_p"] = self.top_p
+        if self._client_supports_parameter("thinking_mode"):
             kwargs["thinking_mode"] = self.thinking_mode
         return self.client.chat(**kwargs)
 
-    def _client_supports_thinking_mode(self) -> bool:
+    def _client_supports_parameter(self, name: str) -> bool:
         try:
             signature = inspect.signature(self.client.chat)
         except (TypeError, ValueError):
             return True
-        if "thinking_mode" in signature.parameters:
+        if name in signature.parameters:
             return True
-        return any(parameter.kind == inspect.Parameter.VAR_KEYWORD for parameter in signature.parameters.values())
+        return any(
+            parameter.kind == inspect.Parameter.VAR_KEYWORD
+            for parameter in signature.parameters.values()
+        )
+
+    def _client_supports_thinking_mode(self) -> bool:
+        return self._client_supports_parameter("thinking_mode")
 
     def _build_score_first_prompt(
         self,
@@ -1751,15 +1771,17 @@ class ReasoningAgent:
             )
         else:
             completeness = (
-                "Before finalizing, ensure every requested part has an answer and all stated "
-                "constraints/conditions are preserved."
+                "Before finalizing, ensure every requested part has an answer; "
+                "preserve all stated constraints/conditions."
             )
         return (
             base
-            + "\n\n"
+            + "\n"
             + _SCORE_FIRST_EXACTNESS_DISCIPLINE
             + "\n"
             + completeness
+            + "\n"
+            + _SCORE_FIRST_DECISIVE_REASONING
         )
 
     def _score_first_context(self, problem: str, metadata: Dict[str, Any]) -> Dict[str, Any]:
@@ -1838,6 +1860,7 @@ class ReasoningAgent:
             discrete_subtype=discrete_subtype,
             micro_strategy=micro_name,
             target_text=target_text,
+            context_text=context_text,
             response_mode=response_mode,
             requested_actions=requested_actions,
         )
@@ -2168,6 +2191,42 @@ class ReasoningAgent:
                     actions.append(action)
         return actions
 
+    def _score_first_span_requests_property_proof(self, span: str) -> bool:
+        text = str(span or "").strip()
+        match = re.match(
+            r"^(?:please\s+)?(?P<verb>show|establish|demonstrate)\b(?P<body>.*)$",
+            text,
+            flags=re.IGNORECASE,
+        )
+        if not match:
+            return False
+
+        body = str(match.group("body") or "").strip()
+        if not body:
+            return False
+
+        # Explicit work/calculation requests are derivations, not theorem proofs.
+        if re.match(
+            r"^(?:your\s+work|the\s+(?:calculation|steps?)|(?:a|the)\s+calculation|"
+            r"(?:the\s+)?(?:working|computation))\b",
+            body,
+            flags=re.IGNORECASE,
+        ):
+            return False
+
+        # Narrow display-only forms remain answer-value requests.
+        if re.match(
+            r"^(?:the\s+)?(?:resulting|final|computed)\s+"
+            r"(?:matrix|expression|formula|result|value|answer|vector|table)\b",
+            body,
+            flags=re.IGNORECASE,
+        ):
+            return False
+
+        # Because this helper is called only on already-grounded request spans,
+        # an imperative establish/demonstrate/show of a mathematical claim is proof-like.
+        return True
+
     def _score_first_requested_actions_for_span(self, span: str) -> List[str]:
         text = str(span or "").strip()
         if not text:
@@ -2180,6 +2239,8 @@ class ReasoningAgent:
             )
             for family, patterns in _SCORE_FIRST_REQUEST_INTENT_PATTERNS.items()
         }
+        if self._score_first_span_requests_property_proof(text):
+            matched["proof"] = True
 
         actions: List[str] = []
         if matched.get("choice") or self._score_first_span_requests_answer_value(text):
@@ -2355,43 +2416,104 @@ class ReasoningAgent:
         discrete_subtype: str | None,
         micro_strategy: str | None,
         target_text: str,
+        context_text: str,
         response_mode: str,
         requested_actions: List[str] | None,
     ) -> tuple[str, str, str]:
         target = str(target_text or "")
+        context = str(context_text or "")
         requested = list(requested_actions or [])
 
         def has(pattern: str) -> bool:
             return bool(re.search(pattern, target, flags=re.IGNORECASE))
 
-        newton_convergence_target = has(
-            r"\b(?:quadratic(?:ally)?|convergence\s+order|order\s+of\s+convergence|"
-            r"local\s+convergence|convergen\w*)\b|二次收敛|收敛阶|局部收敛"
+        def context_has(pattern: str) -> bool:
+            return bool(re.search(pattern, context, flags=re.IGNORECASE))
+
+        convergence_target = has(
+            r"\b(?:quadratic(?:ally)?|quadratic\s+rate|second[- ]order\s+convergence|"
+            r"order\s*2|convergence\s+order|order\s+of\s+convergence|local\s+convergence|"
+            r"convergen\w*|contraction|local\s+derivative\s+condition)\b|"
+            r"二次收敛|收敛阶|局部收敛|压缩"
         )
+        newton_evidence = has(
+            r"\bnewton(?:'s)?(?:\s+method|\s+iteration|\s+step)?\b|"
+            r"x\s*_\{?n\+1\}?\s*=\s*x\s*_\{?n\}?\s*-\s*f\s*\(|"
+            r"\broot[- ]finding\b|牛顿(?:法|迭代|步骤)"
+        )
+        fixed_point_evidence = has(
+            r"\bfixed[- ]point(?:\s+iteration|\s+map|\s+method)?\b|"
+            r"x\s*_\{?n\+1\}?\s*=\s*g\s*\(|"
+            r"x\s*_\{?n\+1\}?\s*=\s*cos\s*\(|"
+            r"\bcontraction(?:\s+mapping)?\b|g\s*'\s*\(\s*x\*?\s*\)|"
+            r"不动点迭代|压缩映射"
+        )
+        fixed_point_condition_target = fixed_point_evidence and (
+            convergence_target
+            or has(r"\bg\s*'\s*\(\s*x\*?\s*\)\b|导数条件")
+        )
+        newton_convergence_target = newton_evidence and convergence_target
+
         indicator_count_target = has(
-            r"\bindicator(?:\s+variables?)?\b|\bexpected\s+(?:number|count)\b|"
-            r"\bsum\s+of\s+(?:events|indicators)\b|指示变量|期望(?:个数|数量|数目)"
+            r"\bindicator(?:\s+variables?)?\b|\b(?:expected|mean)\s+(?:number|count)\b|"
+            r"\bsum\s+of\s+(?:events|indicators)\b|指示变量|"
+            r"(?:期望|平均)(?:个数|数量|数目)"
         )
         moment_target = has(
             r"\bE\s*\[[^\]]+\]|\bVar\s*\(|\bmoment\b|\bmean\b|\bexpectation\b|"
             r"\bexpected\s+value\b|期望|方差|矩"
         )
+
         ols_covariance_target = has(
             r"\bVar\s*\(\s*beta_?hat|\bCov\s*\(\s*beta_?hat|"
+            r"\bvariance\s+of\s+(?:the\s+)?(?:beta_?hat|OLS\s+estimator|least[- ]squares\s+estimator)\b|"
+            r"\bcovariance\s+matrix\s+of\s+(?:the\s+)?beta_?hat\b|"
+            r"\bvariance[- ]covariance\s+matrix\b|"
             r"\bcovariance\b[^.\n]{0,60}\b(?:OLS|beta|coefficient)|"
-            r"\bsampling\s+variance\b|协方差|(?:OLS|beta|系数)[^。；\n]{0,30}方差"
+            r"\bsampling\s+variance\b|"
+            r"(?:beta_?hat|OLS|最小二乘估计)[^。；\n]{0,30}(?:方差|协方差)|"
+            r"(?:方差[-—]?协方差|协方差)矩阵"
         )
-        mle_asymptotic_target = has(
-            r"\basymptotic\s+(?:variance|distribution)\b|\bFisher\s+information\b|"
-            r"\bstandard\s+error\b[^.\n]{0,50}\bMLE\b|渐近方差|渐近分布|"
-            r"Fisher信息|费舍尔信息|标准误"
+
+        mle_evidence = has(
+            r"\bMLE\b|\bmaximum\s+likelihood(?:\s+estimator)?\b|最大似然估计"
+        ) or (
+            context_has(r"\bMLE\b|\bmaximum\s+likelihood(?:\s+estimator)?\b|最大似然估计")
+            and has(r"\bits\b|其")
         )
+        mle_asymptotic_behavior = has(
+            r"\basymptotic\s+(?:variance|distribution|normality)\b|"
+            r"\basymptotically\s+normal\b|\blimiting\s+(?:distribution|law)\b|"
+            r"\bFisher\s+information\b|\bstandard\s+error\b|"
+            r"渐近方差|渐近分布|渐近正态|极限分布|Fisher信息|费舍尔信息|标准误"
+        )
+        mle_asymptotic_target = mle_evidence and mle_asymptotic_behavior
+
         pde_characteristics_target = has(
             r"\b(?:derive|find|obtain)\b[^.\n]{0,60}\bcharacteristic(?:s|\s+equations?)\b|"
             r"推导[^。；\n]{0,40}特征(?:线|方程)"
         )
 
-        # Task semantics dominate computational micro checks.
+        bias_variance_target = has(
+            r"\bunbiased\b|\bbias\b|\bvariance\s+of\s+(?:the\s+)?(?:estimator|statistic)\b|"
+            r"\bE\s*\[\s*T\s*\]|\bVar\s*\(\s*T\s*\)|无偏|偏差|估计量[^。；\n]{0,20}方差"
+        )
+        sufficiency_target = has(
+            r"\bsufficien(?:t|cy)\b|\bfactorization\s+theorem\b|充分(?:统计量|性)|因子分解"
+        )
+
+        brownian_evidence = (
+            has(r"\bbrownian(?:\s+motion)?\b|\bB[_ ]?t\b|\bB_t\b|布朗运动")
+            or context_has(r"\bbrownian(?:\s+motion)?\b|\bB[_ ]?t\b|\bB_t\b|布朗运动")
+        )
+        martingale_evidence = has(r"\bmartingale\b|鞅") or context_has(r"\bmartingale\b|鞅")
+        poisson_evidence = (
+            has(r"\bpoisson\s+process\b|\bN\s*\(\s*t\s*\)|泊松过程")
+            or context_has(r"\bpoisson\s+process\b|\bN\s*\(\s*t\s*\)|泊松过程")
+        )
+
+        # Task semantics dominate calculation-only checks, with compact target-specific
+        # proof variants where the target itself makes a stronger independent check clear.
         if response_mode == _SCORE_FIRST_RESPONSE_MODE_PROOF_OR_DISPROOF:
             return (
                 "task:proof_or_disproof",
@@ -2413,14 +2535,53 @@ class ReasoningAgent:
             )
 
         if response_mode == _SCORE_FIRST_RESPONSE_MODE_PROOF:
-            if micro_strategy == "newton_fixed_point" and newton_convergence_target:
+            if micro_strategy == "newton_fixed_point" and fixed_point_condition_target and not newton_evidence:
+                return (
+                    "task:proof",
+                    "fixed_point_convergence_proof",
+                    (
+                        "Verify every stated hypothesis and conclusion; check x*=g(x*) and the contraction/local "
+                        "derivative condition using only the fixed-point hypotheses actually stated."
+                    ),
+                )
+            if (
+                micro_strategy in {"newton_fixed_point", "stability_convergence"}
+                and newton_convergence_target
+            ):
                 return (
                     "task:proof",
                     "newton_convergence_proof",
                     (
-                        "Verify every stated hypothesis and the exact conclusion. For Newton convergence, check the "
+                        "Verify every stated hypothesis and exact conclusion. For Newton convergence, check the "
                         "simple-root/nonzero-derivative and regularity assumptions, then confirm the local error relation "
-                        "implies the claimed order, e.g. e_(n+1)=O(e_n^2)."
+                        "implies the claimed order."
+                    ),
+                )
+            if strategy_domain == "statistics" and mle_asymptotic_target:
+                return (
+                    "task:proof",
+                    "mle_asymptotic_proof",
+                    (
+                        "Verify the proof hypotheses and exact asymptotic claim; recompute the score/Fisher information "
+                        "with the stated sample-size scaling and confirm it supports the claimed limiting law."
+                    ),
+                )
+            if micro_strategy == "bias_variance_sufficiency" and bias_variance_target:
+                return (
+                    "task:proof",
+                    "bias_variance_proof",
+                    (
+                        "Verify the proof reaches the requested estimator property; independently recompute E[T] "
+                        "and/or Var(T) under the stated sampling model."
+                    ),
+                )
+            if micro_strategy == "bias_variance_sufficiency" and sufficiency_target:
+                return (
+                    "task:proof",
+                    "sufficiency_proof",
+                    (
+                        "Verify the proof reaches sufficiency under the stated model and that the factorization or "
+                        "conditional-distribution criterion actually applies."
                     ),
                 )
             return (
@@ -2429,10 +2590,24 @@ class ReasoningAgent:
                 _SCORE_FIRST_TASK_FINAL_CHECKS["proof"],
             )
 
-        # Target-aware variants within an already-selected high-precision micro family.
-        if micro_strategy == "newton_fixed_point" and newton_convergence_target:
+        # Newton and generic fixed-point iteration share one micro taxonomy but not one
+        # verification semantics.
+        if micro_strategy == "newton_fixed_point" and fixed_point_condition_target:
+            if not newton_evidence or has(
+                r"\bfixed[- ]point\b|\bcontraction\b|g\s*'\s*\(|不动点|压缩"
+            ):
+                return (
+                    "micro:newton_fixed_point",
+                    "fixed_point_convergence",
+                    _SCORE_FIRST_TARGET_FINAL_CHECKS["fixed_point_convergence"],
+                )
+
+        if (
+            micro_strategy in {"newton_fixed_point", "stability_convergence"}
+            and newton_convergence_target
+        ):
             return (
-                "micro:newton_fixed_point",
+                f"micro:{micro_strategy}",
                 "newton_convergence",
                 _SCORE_FIRST_TARGET_FINAL_CHECKS["newton_convergence"],
             )
@@ -2470,6 +2645,57 @@ class ReasoningAgent:
                 _SCORE_FIRST_TARGET_FINAL_CHECKS["mle_asymptotic"],
             )
 
+        if micro_strategy == "bias_variance_sufficiency":
+            if sufficiency_target:
+                return (
+                    "micro:bias_variance_sufficiency",
+                    "sufficiency",
+                    _SCORE_FIRST_TARGET_FINAL_CHECKS["sufficiency"],
+                )
+            if bias_variance_target:
+                return (
+                    "micro:bias_variance_sufficiency",
+                    "bias_variance",
+                    _SCORE_FIRST_TARGET_FINAL_CHECKS["bias_variance"],
+                )
+
+        if micro_strategy == "brownian_martingale":
+            if martingale_evidence and not brownian_evidence:
+                return (
+                    "micro:brownian_martingale",
+                    "martingale",
+                    _SCORE_FIRST_TARGET_FINAL_CHECKS["martingale"],
+                )
+            if brownian_evidence:
+                return (
+                    "micro:brownian_martingale",
+                    "brownian_moment",
+                    _SCORE_FIRST_TARGET_FINAL_CHECKS["brownian_moment"],
+                )
+
+        # Conservative Brownian/Poisson verification recovery when the frozen target-side
+        # micro selector intentionally omitted a background-only method label.
+        if strategy_domain == "stochastic_process" and brownian_evidence and (
+            has(r"\bE\s*\[|\bVar\s*\(|\bCov\s*\(|\bmartingale\b|期望|方差|协方差|鞅")
+        ):
+            variant = "martingale" if martingale_evidence and has(r"\bmartingale\b|鞅") else "brownian_moment"
+            card = _SCORE_FIRST_TARGET_FINAL_CHECKS[variant]
+            return ("domain:stochastic_process", variant, card)
+
+        if (
+            strategy_domain == "stochastic_process"
+            and micro_strategy is None
+            and poisson_evidence
+            and has(
+                r"\bN\s*\(\s*t\s*\)|\bP\s*\(|\bincrement\b|\bthinning\b|\bsuperposition\b|概率|增量|稀疏|叠加"
+            )
+        ):
+            return (
+                "domain:stochastic_process",
+                "poisson_process",
+                _SCORE_FIRST_MICRO_FINAL_CHECKS["poisson_process"],
+            )
+
         if micro_strategy == "spectrum_invertibility":
             return (
                 "micro:spectrum_invertibility",
@@ -2477,8 +2703,6 @@ class ReasoningAgent:
                 _SCORE_FIRST_MICRO_FINAL_CHECKS["spectrum_invertibility"],
             )
 
-        # Deriving PDE characteristics should validate the derived characteristic
-        # relation even though transport_characteristics has no dedicated V2.5 card.
         if (
             response_mode == _SCORE_FIRST_RESPONSE_MODE_DERIVATION
             and strategy_domain == "pde"
@@ -2491,7 +2715,7 @@ class ReasoningAgent:
                 _SCORE_FIRST_TARGET_FINAL_CHECKS["pde_characteristics_derivation"],
             )
 
-        # Preserve V2.5 hierarchy for ordinary calculation/derivation targets.
+        # Preserve the established V2.5 hierarchy for ordinary calculation/derivation.
         if micro_strategy and micro_strategy in _SCORE_FIRST_MICRO_FINAL_CHECKS:
             return (
                 f"micro:{micro_strategy}",
@@ -2512,8 +2736,6 @@ class ReasoningAgent:
             else "advanced_math"
         )
 
-        # For an otherwise-generic derivation, validate the derived target itself
-        # rather than injecting a calculation-only residual.
         if response_mode == _SCORE_FIRST_RESPONSE_MODE_DERIVATION and not requested:
             return (
                 f"domain:{domain}",

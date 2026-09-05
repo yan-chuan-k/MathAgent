@@ -330,6 +330,6 @@ def test_100_successful_score_first_problems_equal_100_model_calls():
         assert result["final_response"] == "42"
 
     assert len(client.calls) == 100
-    assert all(call["temperature"] == 0.1 for call in client.calls)
-    assert all(call["max_tokens"] == 8192 for call in client.calls)
+    assert all(call["temperature"] == 0.8 for call in client.calls)
+    assert all(call["max_tokens"] == 32768 for call in client.calls)
     assert all(call["thinking_mode"] is True for call in client.calls)
