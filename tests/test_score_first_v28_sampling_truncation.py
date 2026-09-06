@@ -154,7 +154,7 @@ def test_100_successful_score_first_problems_equal_100_official_style_calls():
 
 def test_decisive_anti_loop_instruction_appears_exactly_once():
     client = OfficialStyleRecordingClient()
-    agent = ReasoningAgent(client)
+    agent = ReasoningAgent(client, score_first_prompt_profile="full")
     agent.solve(
         "Find the expected value.",
         {"subject": "Probability Theory", "task_type": "calculation"},
@@ -171,7 +171,7 @@ def test_decisive_anti_loop_instruction_appears_exactly_once():
 
 
 def test_v28_frozen_110_prompt_budget_stays_at_most_1900_chars():
-    agent = ReasoningAgent(OfficialStyleRecordingClient())
+    agent = ReasoningAgent(OfficialStyleRecordingClient(), score_first_prompt_profile="full")
     lengths = []
 
     for row in _rows(ROUTING):

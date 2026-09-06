@@ -126,7 +126,7 @@ def test_100_successful_tasks_still_make_exactly_100_calls():
 
 def test_softened_anti_loop_allows_one_correction():
     client = RecordingClient()
-    agent = ReasoningAgent(client)
+    agent = ReasoningAgent(client, score_first_prompt_profile="full")
     agent.solve("Compute 3+4.", {"subject": "Advanced Mathematics"})
 
     system_prompt = client.calls[0]["messages"][0]["content"]

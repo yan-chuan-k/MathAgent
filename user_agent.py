@@ -25,6 +25,42 @@ No JSON or problem restatement. Do not omit necessary logical steps.
 The subject/strategy hint is advisory.
 """.strip()
 
+_SCORE_FIRST_MINIMAL_ANSWER_SYSTEM_PROMPT = """You are a high-accuracy mathematics solver.
+Solve the problem carefully.
+Output exactly ONE visible line:
+Final answer: <complete requested answer>
+Then stop.
+Answer every requested part.
+Preserve exact conditions, domains, units, moduli, and multiplicities.
+Use an exact form unless an approximation is requested.
+Do not output JSON. Do not repeat the problem.
+""".strip()
+
+_SCORE_FIRST_MINIMAL_DERIVATION_SYSTEM_PROMPT = """You are a high-accuracy mathematics solver.
+Give the final result first, then a concise derivation containing the mathematical steps explicitly requested.
+Answer every requested part.
+Do not output JSON or repeat the problem.
+""".strip()
+
+_SCORE_FIRST_MINIMAL_PROOF_SYSTEM_PROMPT = """You are a high-accuracy mathematics solver.
+State the conclusion first, then give a concise complete proof.
+Use all necessary hypotheses and prove exactly the requested claim.
+Do not output JSON or repeat the problem.
+""".strip()
+
+_SCORE_FIRST_MINIMAL_PROOF_OR_DISPROOF_SYSTEM_PROMPT = """You are a high-accuracy mathematics solver.
+Determine whether the claim is true or false.
+If true, give a concise proof.
+If false, give a counterexample or disproof and verify it.
+Do not assume the statement is true.
+Do not output JSON or repeat the problem.
+""".strip()
+
+_SCORE_FIRST_MINIMAL_CONSTRUCTION_SYSTEM_PROMPT = """You are a high-accuracy mathematics solver.
+State the requested object or counterexample first, then give only the verification needed to show it satisfies the requested properties.
+Do not output JSON or repeat the problem.
+""".strip()
+
 _SCORE_FIRST_DOMAIN_STRATEGIES = {
     "discrete_math": (
         "Identify the exact combinatorial, graph, recurrence, generating-function, or number-theoretic "
@@ -1593,6 +1629,12 @@ class ReasoningAgent:
         if self.production_mode not in {"score_first", "orchestrated"}:
             raise ValueError("production_mode must be 'score_first' or 'orchestrated'")
 
+        self.score_first_prompt_profile = str(
+            kwargs.get("score_first_prompt_profile", "minimal") or "minimal"
+        ).strip().lower()
+        if self.score_first_prompt_profile not in {"minimal", "full"}:
+            raise ValueError("score_first_prompt_profile must be 'minimal' or 'full'")
+
         self.max_retries = int(kwargs.get("max_retries", 1))
         default_temperature = 0.8 if self.production_mode == "score_first" else 0.2
         default_max_tokens = 32768 if self.production_mode == "score_first" else 4096
@@ -1663,7 +1705,7 @@ class ReasoningAgent:
             return self._fallback_result(f"{type(exc).__name__}: {str(exc)[:300]}")
 
     def _solve_score_first(self, problem: str, metadata: Dict[str, Any]) -> Dict[str, Any]:
-        context = self._score_first_context(problem, metadata)
+        context = self._score_first_prompt_context(problem, metadata)
         response = self._score_first_model_call(problem, metadata, context=context)
         raw_output = self._normalize_model_response(response)
         final_response = self._extract_score_first_response(
@@ -1674,11 +1716,12 @@ class ReasoningAgent:
         subject_hint = context.get("subject_hint") or ""
         trace = [
             make_trace_step("mode", "score_first"),
+            make_trace_step("prompt_profile", self.score_first_prompt_profile),
             make_trace_step("model_call", "primary client.chat call: 1"),
             make_trace_step("answer", "answer extracted" if final_response != DEFAULT_FALLBACK else "empty/unusable answer"),
         ]
         if subject_hint:
-            trace.insert(1, make_trace_step("subject_hint", subject_hint))
+            trace.insert(2, make_trace_step("subject_hint", subject_hint))
         return self._score_first_json_result(final_response, trace)
 
     def _score_first_model_call(
@@ -1721,13 +1764,55 @@ class ReasoningAgent:
     def _client_supports_thinking_mode(self) -> bool:
         return self._client_supports_parameter("thinking_mode")
 
+    def _score_first_prompt_context(
+        self,
+        problem: str,
+        metadata: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        if self.score_first_prompt_profile == "full":
+            return self._score_first_context(problem, metadata)
+        return self._score_first_minimal_context(problem, metadata)
+
+    def _score_first_minimal_context(
+        self,
+        problem: str,
+        metadata: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        trusted_domain, trusted_key = self._trusted_score_first_domain(metadata)
+        request_records = self._score_first_request_span_records(problem)
+        request_spans = [record["text"] for record in request_records]
+        requested_actions = self._score_first_requested_actions(request_spans)
+        response_mode = self._score_first_response_mode(
+            problem,
+            metadata,
+            {},
+            request_spans=request_spans,
+        )
+        subject_hint = self._trusted_score_first_subject_hint(
+            metadata,
+            trusted_domain=trusted_domain,
+            trusted_key=trusted_key,
+        )
+        return {
+            "response_mode": response_mode,
+            "request_spans": request_spans,
+            "requested_actions": requested_actions,
+            "subject_hint": subject_hint,
+            "trusted_domain": trusted_domain,
+            "trusted_key": trusted_key,
+            "prompt_profile": "minimal",
+        }
+
     def _build_score_first_prompt(
         self,
         problem: str,
         metadata: Dict[str, Any],
         context: Dict[str, Any] | None = None,
     ) -> List[Dict[str, str]]:
-        context = context or self._score_first_context(problem, metadata)
+        context = context or self._score_first_prompt_context(problem, metadata)
+        if self.score_first_prompt_profile == "minimal":
+            return self._build_minimal_score_first_prompt(problem, context)
+
         subject = str(context.get("subject_hint") or "").strip()
         subject_line = f"Subject hint: {subject}\n\n" if subject else ""
         response_mode = context["response_mode"]
@@ -1751,6 +1836,41 @@ class ReasoningAgent:
                 ),
             },
         ]
+
+    def _build_minimal_score_first_prompt(
+        self,
+        problem: str,
+        context: Dict[str, Any],
+    ) -> List[Dict[str, str]]:
+        response_mode = context["response_mode"]
+        subject = str(context.get("subject_hint") or "").strip()
+        subject_line = f"Subject: {subject}\n\n" if subject else ""
+        system_prompt = self._score_first_minimal_system_prompt(response_mode)
+        user_instruction = {
+            _SCORE_FIRST_RESPONSE_MODE_ANSWER: "Return the requested answer.",
+            _SCORE_FIRST_RESPONSE_MODE_DERIVATION: "Include the requested derivation.",
+            _SCORE_FIRST_RESPONSE_MODE_PROOF: "Provide the requested proof.",
+            _SCORE_FIRST_RESPONSE_MODE_PROOF_OR_DISPROOF: "Prove or disprove the claim.",
+            _SCORE_FIRST_RESPONSE_MODE_CONSTRUCTION: "Provide the requested construction or counterexample.",
+        }[response_mode]
+        return [
+            {"role": "system", "content": system_prompt},
+            {
+                "role": "user",
+                "content": f"{subject_line}Problem:\n{problem}\n\n{user_instruction}",
+            },
+        ]
+
+    def _score_first_minimal_system_prompt(self, response_mode: str) -> str:
+        if response_mode == _SCORE_FIRST_RESPONSE_MODE_DERIVATION:
+            return _SCORE_FIRST_MINIMAL_DERIVATION_SYSTEM_PROMPT
+        if response_mode == _SCORE_FIRST_RESPONSE_MODE_PROOF:
+            return _SCORE_FIRST_MINIMAL_PROOF_SYSTEM_PROMPT
+        if response_mode == _SCORE_FIRST_RESPONSE_MODE_PROOF_OR_DISPROOF:
+            return _SCORE_FIRST_MINIMAL_PROOF_OR_DISPROOF_SYSTEM_PROMPT
+        if response_mode == _SCORE_FIRST_RESPONSE_MODE_CONSTRUCTION:
+            return _SCORE_FIRST_MINIMAL_CONSTRUCTION_SYSTEM_PROMPT
+        return _SCORE_FIRST_MINIMAL_ANSWER_SYSTEM_PROMPT
 
     def _score_first_system_prompt(self, response_mode: str) -> str:
         if response_mode == _SCORE_FIRST_RESPONSE_MODE_DERIVATION:

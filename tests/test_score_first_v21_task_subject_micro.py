@@ -45,7 +45,7 @@ class RecordingClient:
 
 def _solve(problem: str, response: str, metadata=None):
     client = RecordingClient(response)
-    agent = ReasoningAgent(client=client)
+    agent = ReasoningAgent(client=client, score_first_prompt_profile="full")
     result = agent.solve(problem, metadata or {})
     return result, client, agent
 
@@ -74,13 +74,13 @@ def _prompt(problem: str, metadata):
     ],
 )
 def test_task_mode_precedence_and_selection(problem, metadata, expected_mode):
-    agent = ReasoningAgent(client=RecordingClient())
+    agent = ReasoningAgent(client=RecordingClient(), score_first_prompt_profile="full")
     context = agent._score_first_context(problem, metadata)
     assert context["response_mode"] == expected_mode
 
 
 def test_trusted_metadata_task_type_is_used_when_problem_has_no_explicit_marker():
-    agent = ReasoningAgent(client=RecordingClient())
+    agent = ReasoningAgent(client=RecordingClient(), score_first_prompt_profile="full")
     context = agent._score_first_context(
         "Obtain the requested covariance formula.",
         {"task_type": "derivation", "subject": "Linear Regression"},
@@ -203,12 +203,12 @@ def test_construction_counterexample_mode_preserves_object_and_verification(prob
     ],
 )
 def test_subject_label_canonicalization(label, expected):
-    agent = ReasoningAgent(client=RecordingClient())
+    agent = ReasoningAgent(client=RecordingClient(), score_first_prompt_profile="full")
     assert agent._canonical_score_first_domain_label(label) == expected
 
 
 def test_subject_type_category_precedence_is_deterministic():
-    agent = ReasoningAgent(client=RecordingClient())
+    agent = ReasoningAgent(client=RecordingClient(), score_first_prompt_profile="full")
     trusted, key = agent._trusted_score_first_domain(
         {
             "subject": "Numerical Analysis",
@@ -258,7 +258,7 @@ def test_human_subject_selects_expected_domain_strategy(subject, problem, expect
     ],
 )
 def test_high_value_domain_selects_exactly_one_micro_strategy(domain, problem, expected_micro):
-    agent = ReasoningAgent(client=RecordingClient())
+    agent = ReasoningAgent(client=RecordingClient(), score_first_prompt_profile="full")
     context = agent._score_first_context(problem, {"subject": domain})
     assert context["micro_strategy"] == expected_micro
     assert context["micro_card"]
@@ -278,7 +278,7 @@ def test_high_value_domain_selects_exactly_one_micro_strategy(domain, problem, e
 
 def test_no_micro_card_for_discrete_math_beyond_single_subtype_card():
     problem = "Solve 7x ≡ 3 (mod 20)."
-    agent = ReasoningAgent(client=RecordingClient())
+    agent = ReasoningAgent(client=RecordingClient(), score_first_prompt_profile="full")
     context = agent._score_first_context(problem, {"subject": "Discrete Mathematics"})
     assert context["strategy_domain"] == "discrete_math"
     assert context["discrete_subtype"] == "number_theory_modular"
@@ -289,7 +289,7 @@ def test_no_micro_card_for_discrete_math_beyond_single_subtype_card():
 
 
 def test_total_strategy_block_stays_under_120_words():
-    agent = ReasoningAgent(client=RecordingClient())
+    agent = ReasoningAgent(client=RecordingClient(), score_first_prompt_profile="full")
 
     for domain, entries in _SCORE_FIRST_MICRO_STRATEGIES.items():
         for name, _, _, card in entries:
@@ -313,7 +313,7 @@ def test_total_strategy_block_stays_under_120_words():
 
 def test_110_case_subject_robustness_views_and_conservative_no_subject_precision():
     rows = [json.loads(line) for line in ROUTING_FIXTURE.read_text(encoding="utf-8").splitlines() if line.strip()]
-    agent = ReasoningAgent(client=RecordingClient())
+    agent = ReasoningAgent(client=RecordingClient(), score_first_prompt_profile="full")
 
     canonical_correct = 0
     human_correct = 0
@@ -354,7 +354,7 @@ def test_110_case_subject_robustness_views_and_conservative_no_subject_precision
 
 
 def test_low_confidence_no_subject_problem_uses_general_strategy():
-    agent = ReasoningAgent(client=RecordingClient())
+    agent = ReasoningAgent(client=RecordingClient(), score_first_prompt_profile="full")
     context = agent._score_first_context("Determine the requested mathematical object.", {})
     assert context["strategy_domain"] == "advanced_math"
     assert context["strategy_is_specialized"] is False
@@ -362,7 +362,7 @@ def test_low_confidence_no_subject_problem_uses_general_strategy():
 
 
 def test_no_subject_discrete_subtype_requires_high_confidence_discrete_route():
-    agent = ReasoningAgent(client=RecordingClient())
+    agent = ReasoningAgent(client=RecordingClient(), score_first_prompt_profile="full")
 
     low = agent._score_first_context(
         "A random permutation is observed; compute the requested probability.",
@@ -387,7 +387,7 @@ def test_v21_preserves_one_call_budget_for_100_mixed_mode_successes():
         3: "Construction: x=0.\nVerification: it has the required property.",
     }
     client = RecordingClient()
-    agent = ReasoningAgent(client=client)
+    agent = ReasoningAgent(client=client, score_first_prompt_profile="full")
     problems = [
         "Compute 6*7.",
         "Derive the product 6*7.",

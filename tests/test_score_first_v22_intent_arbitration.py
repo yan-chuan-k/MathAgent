@@ -56,7 +56,7 @@ class RecordingClient:
     ],
 )
 def test_negative_or_incidental_action_mentions_do_not_request_reasoning_mode(problem):
-    agent = ReasoningAgent(RecordingClient())
+    agent = ReasoningAgent(RecordingClient(), score_first_prompt_profile="full")
     context = agent._score_first_context(problem, {})
     assert context["response_mode"] == _SCORE_FIRST_RESPONSE_MODE_ANSWER
 
@@ -78,12 +78,12 @@ def test_negative_or_incidental_action_mentions_do_not_request_reasoning_mode(pr
     ],
 )
 def test_strong_request_intent_classifier(problem, expected):
-    agent = ReasoningAgent(RecordingClient())
+    agent = ReasoningAgent(RecordingClient(), score_first_prompt_profile="full")
     assert agent._score_first_explicit_response_intent(problem) == expected
 
 
 def test_strong_explicit_request_overrides_incorrect_task_metadata():
-    agent = ReasoningAgent(RecordingClient())
+    agent = ReasoningAgent(RecordingClient(), score_first_prompt_profile="full")
     proof = agent._score_first_context(
         "Prove that every compact subset of a Hausdorff space is closed.",
         {"task_type": "calculation", "subject": "Topology"},
@@ -109,7 +109,7 @@ def test_72_stress_cases_are_mode_compatible_with_trusted_task_metadata():
     rows = [json.loads(line) for line in STRESS_FIXTURE.read_text(encoding="utf-8").splitlines() if line.strip()]
     assert len(rows) == 72
 
-    agent = ReasoningAgent(RecordingClient())
+    agent = ReasoningAgent(RecordingClient(), score_first_prompt_profile="full")
     mismatches = []
     for row in rows:
         context = agent._score_first_context(
@@ -130,14 +130,14 @@ def test_72_stress_cases_are_mode_compatible_with_trusted_task_metadata():
 def test_subject_only_clear_explanation_requests_are_derivations(idx):
     rows = [json.loads(line) for line in STRESS_FIXTURE.read_text(encoding="utf-8").splitlines() if line.strip()]
     row = next(item for item in rows if item["idx"] == idx)
-    agent = ReasoningAgent(RecordingClient())
+    agent = ReasoningAgent(RecordingClient(), score_first_prompt_profile="full")
     context = agent._score_first_context(row["problem"], {"subject": row["subject"]})
     assert context["response_mode"] == _SCORE_FIRST_RESPONSE_MODE_DERIVATION
 
 
 def test_score_first_subject_hint_is_emitted_only_for_trusted_domain_metadata():
     client = RecordingClient()
-    agent = ReasoningAgent(client)
+    agent = ReasoningAgent(client, score_first_prompt_profile="full")
 
     agent.solve("Compute 1+1.", {"subject": "Probability Theory"})
     prompt = client.calls[-1]["messages"][1]["content"]
@@ -158,7 +158,7 @@ def test_score_first_subject_hint_is_emitted_only_for_trusted_domain_metadata():
 
 def test_110_subject_views_and_no_subject_margin_regression():
     rows = [json.loads(line) for line in ROUTING_FIXTURE.read_text(encoding="utf-8").splitlines() if line.strip()]
-    agent = ReasoningAgent(RecordingClient())
+    agent = ReasoningAgent(RecordingClient(), score_first_prompt_profile="full")
 
     canonical = 0
     human = 0
@@ -204,7 +204,7 @@ def test_110_subject_views_and_no_subject_margin_regression():
 
 
 def test_cross_domain_hybrid_without_subject_falls_back_when_margin_is_small():
-    agent = ReasoningAgent(RecordingClient())
+    agent = ReasoningAgent(RecordingClient(), score_first_prompt_profile="full")
     context = agent._score_first_context(
         "A random graph G(n,p) is chosen. Compute the probability that it is connected.",
         {},
@@ -215,7 +215,7 @@ def test_cross_domain_hybrid_without_subject_falls_back_when_margin_is_small():
 
 
 def _audit_micro_rows(rows):
-    agent = ReasoningAgent(RecordingClient())
+    agent = ReasoningAgent(RecordingClient(), score_first_prompt_profile="full")
     selected = 0
     correct = 0
     wrong = []
@@ -283,7 +283,7 @@ def test_dedicated_micro_arbitration_has_zero_wrong_cards():
 def test_known_micro_collisions_are_arbitrated_correctly(idx, expected):
     rows = [json.loads(line) for line in ARBITRATION_FIXTURE.read_text(encoding="utf-8").splitlines() if line.strip()]
     row = next(item for item in rows if item["idx"] == idx)
-    agent = ReasoningAgent(RecordingClient())
+    agent = ReasoningAgent(RecordingClient(), score_first_prompt_profile="full")
     context = agent._score_first_context(row["problem"], {"subject": row["domain"]})
     assert context["micro_strategy"] == expected
     assert context["micro_match"]["score"] >= 4
@@ -294,7 +294,7 @@ def test_ambiguous_micro_cases_prefer_no_hint():
     rows = [json.loads(line) for line in ARBITRATION_FIXTURE.read_text(encoding="utf-8").splitlines() if line.strip()]
     ambiguous = [row for row in rows if row.get("expected_micro", "missing") is None]
     assert ambiguous
-    agent = ReasoningAgent(RecordingClient())
+    agent = ReasoningAgent(RecordingClient(), score_first_prompt_profile="full")
     for row in ambiguous:
         context = agent._score_first_context(row["problem"], {"subject": row["domain"]})
         assert context["micro_strategy"] is None, row["idx"]
@@ -329,7 +329,7 @@ def test_scored_micro_rules_use_strong_and_weak_pattern_sets():
 
 def test_v22_preserves_one_model_call_per_successful_score_first_problem():
     client = RecordingClient("Final answer: 42")
-    agent = ReasoningAgent(client)
+    agent = ReasoningAgent(client, score_first_prompt_profile="full")
     for i in range(100):
         result = agent.solve(
             f"Compute 6*7 for case {i}.",

@@ -112,7 +112,7 @@ def test_score_first_prompt_is_compact_free_text_not_internal_json_contract():
     ):
         assert forbidden not in prompt
     assert "Do not output JSON." in prompt
-    assert "Subject hint: 离散数学" in prompt
+    assert "Subject: 离散数学" in prompt
     assert "Final answer: <complete requested answer>" in prompt
 
 
@@ -282,7 +282,7 @@ def test_score_first_answer_and_proof_prompts_are_separate():
     answer_prompt = answer_client.calls[0]["messages"][0]["content"]
     assert "Output exactly ONE visible line" in answer_prompt
     assert "Then stop." in answer_prompt
-    assert "Do not provide visible explanation or derivation." in answer_prompt
+    assert "Do not output JSON." in answer_prompt
     assert "State the conclusion first" not in answer_prompt
 
     proof_client = RecordingClient("Conclusion: true.\nProof: direct.")
@@ -290,8 +290,8 @@ def test_score_first_answer_and_proof_prompts_are_separate():
     proof_agent.solve("Prove that 2 is even.")
     proof_prompt = proof_client.calls[0]["messages"][0]["content"]
     assert "State the conclusion first" in proof_prompt
-    assert "concise but complete proof" in proof_prompt
-    assert "Do not omit necessary logical steps" in proof_prompt
+    assert "concise complete proof" in proof_prompt
+    assert "prove exactly the requested claim" in proof_prompt
     assert "Output exactly ONE visible line" not in proof_prompt
 
 

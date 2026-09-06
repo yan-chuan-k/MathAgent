@@ -68,12 +68,12 @@ def _rows(path: Path):
     ],
 )
 def test_request_clause_extraction_separates_target_from_background(problem, expected_spans):
-    agent = ReasoningAgent(RecordingClient())
+    agent = ReasoningAgent(RecordingClient(), score_first_prompt_profile="full")
     assert agent._score_first_request_spans(problem) == expected_spans
 
 
 def test_context_text_keeps_background_outside_request_target():
-    agent = ReasoningAgent(RecordingClient())
+    agent = ReasoningAgent(RecordingClient(), score_first_prompt_profile="full")
     context = agent._score_first_context(
         "Let T be a compact operator on a Banach space. Determine whether I-T is invertible.",
         {"subject": "Functional Analysis"},
@@ -84,7 +84,7 @@ def test_context_text_keeps_background_outside_request_target():
 
 
 def test_router_reasoning_label_alone_cannot_force_visible_reasoning():
-    agent = ReasoningAgent(RecordingClient())
+    agent = ReasoningAgent(RecordingClient(), score_first_prompt_profile="full")
     fake_route = {"task_type": "proof"}
     assert (
         agent._score_first_response_mode(
@@ -127,12 +127,12 @@ def test_router_reasoning_label_alone_cannot_force_visible_reasoning():
     ],
 )
 def test_explanation_request_upgrades_choice_but_choice_only_stays_answer(problem, expected):
-    agent = ReasoningAgent(RecordingClient())
+    agent = ReasoningAgent(RecordingClient(), score_first_prompt_profile="full")
     assert agent._score_first_context(problem, {})["response_mode"] == expected
 
 
 def test_request_intent_adversarial_fixture_has_zero_failures():
-    agent = ReasoningAgent(RecordingClient())
+    agent = ReasoningAgent(RecordingClient(), score_first_prompt_profile="full")
     failures = []
     for row in _rows(INTENT_FIXTURE):
         got = agent._score_first_context(row["problem"], {})["response_mode"]
@@ -147,7 +147,7 @@ def test_proof_or_disproof_has_dedicated_prompt_and_preserves_full_response():
         "Counterexample: the identity on an infinite-dimensional Banach space is bounded but not compact."
     )
     client = RecordingClient(response)
-    agent = ReasoningAgent(client)
+    agent = ReasoningAgent(client, score_first_prompt_profile="full")
     result = agent.solve(
         "Prove or disprove: every bounded operator on a Banach space is compact.",
         {"subject": "Functional Analysis"},
@@ -160,7 +160,7 @@ def test_proof_or_disproof_has_dedicated_prompt_and_preserves_full_response():
 
 
 def test_target_aware_micro_matrix_has_zero_wrong_cards():
-    agent = ReasoningAgent(RecordingClient())
+    agent = ReasoningAgent(RecordingClient(), score_first_prompt_profile="full")
     wrong = []
     for row in _rows(TARGET_FIXTURE):
         context = agent._score_first_context(row["problem"], {"subject": row["domain"]})
@@ -171,7 +171,7 @@ def test_target_aware_micro_matrix_has_zero_wrong_cards():
 
 
 def test_background_only_method_does_not_create_micro_without_target_link():
-    agent = ReasoningAgent(RecordingClient())
+    agent = ReasoningAgent(RecordingClient(), score_first_prompt_profile="full")
     context = agent._score_first_context(
         "Let T be a compact operator. Compute 2+2.",
         {"subject": "Functional Analysis"},
@@ -181,7 +181,7 @@ def test_background_only_method_does_not_create_micro_without_target_link():
 
 
 def test_target_evidence_dominates_background_method():
-    agent = ReasoningAgent(RecordingClient())
+    agent = ReasoningAgent(RecordingClient(), score_first_prompt_profile="full")
     context = agent._score_first_context(
         "For the heat equation on R^n, find its fundamental solution.",
         {"subject": "PDE"},
@@ -192,7 +192,7 @@ def test_target_evidence_dominates_background_method():
 
 
 def test_regex_synonyms_inside_one_evidence_group_count_once():
-    agent = ReasoningAgent(RecordingClient())
+    agent = ReasoningAgent(RecordingClient(), score_first_prompt_profile="full")
     context = agent._score_first_context(
         "Use KKT (Karush-Kuhn-Tucker) conditions and KKT complementary slackness to solve the problem.",
         {"subject": "Optimization"},
@@ -204,7 +204,7 @@ def test_regex_synonyms_inside_one_evidence_group_count_once():
 
 
 def _audit_expected_micro(path: Path):
-    agent = ReasoningAgent(RecordingClient())
+    agent = ReasoningAgent(RecordingClient(), score_first_prompt_profile="full")
     clear = selected = correct = 0
     wrong = []
     missing = []
@@ -254,7 +254,7 @@ def test_hidden_style_method_clear_reaches_at_least_90_percent_with_zero_wrong()
 
 def test_canonical_and_human_subject_routing_remain_110_of_110():
     rows = _rows(ROUTING_FIXTURE)
-    agent = ReasoningAgent(RecordingClient())
+    agent = ReasoningAgent(RecordingClient(), score_first_prompt_profile="full")
     canonical = human = 0
     for row in rows:
         expected = row["expected_domain"]
@@ -281,7 +281,7 @@ def test_canonical_and_human_subject_routing_remain_110_of_110():
 
 def test_no_subject_specialized_precision_remains_100_percent():
     rows = _rows(ROUTING_FIXTURE)
-    agent = ReasoningAgent(RecordingClient())
+    agent = ReasoningAgent(RecordingClient(), score_first_prompt_profile="full")
     selected = correct = 0
     for row in rows:
         context = agent._score_first_context(
@@ -297,7 +297,7 @@ def test_no_subject_specialized_precision_remains_100_percent():
 
 def test_score_first_call_budget_stays_one_per_problem():
     client = RecordingClient("Final answer: 42")
-    agent = ReasoningAgent(client)
+    agent = ReasoningAgent(client, score_first_prompt_profile="full")
     for index in range(100):
         result = agent.solve(
             f"Compute 6*7 for regression case {index}.",

@@ -48,7 +48,7 @@ def _rows(path: Path):
 
 
 def test_verification_fixture_selects_exactly_one_expected_check():
-    agent = ReasoningAgent(RecordingClient())
+    agent = ReasoningAgent(RecordingClient(), score_first_prompt_profile="full")
     failures = []
 
     for row in _rows(VERIFICATION_FIXTURE):
@@ -71,7 +71,7 @@ def test_verification_fixture_selects_exactly_one_expected_check():
 
 
 def test_verification_fixture_labels_never_enter_solver_metadata():
-    agent = ReasoningAgent(RecordingClient())
+    agent = ReasoningAgent(RecordingClient(), score_first_prompt_profile="full")
     for row in _rows(VERIFICATION_FIXTURE):
         metadata = {"subject": row["subject"]}
         assert "expected_verification_key" not in metadata
@@ -81,7 +81,7 @@ def test_verification_fixture_labels_never_enter_solver_metadata():
 
 def test_one_verification_block_appears_once_in_prompt():
     client = RecordingClient()
-    agent = ReasoningAgent(client)
+    agent = ReasoningAgent(client, score_first_prompt_profile="full")
 
     for row in _rows(VERIFICATION_FIXTURE):
         client.calls.clear()
@@ -99,7 +99,7 @@ def test_one_verification_block_appears_once_in_prompt():
 
 
 def test_verification_selection_hierarchy_micro_then_discrete_then_domain():
-    agent = ReasoningAgent(RecordingClient())
+    agent = ReasoningAgent(RecordingClient(), score_first_prompt_profile="full")
 
     micro = agent._score_first_context(
         "Use Newton interpolation with divided differences to evaluate the interpolant at x=2.",
@@ -178,7 +178,7 @@ def test_all_18_domains_have_compact_fallback_checks():
     ],
 )
 def test_high_frequency_english_math_actions_create_answer_value_targets(problem, expected_span):
-    agent = ReasoningAgent(RecordingClient())
+    agent = ReasoningAgent(RecordingClient(), score_first_prompt_profile="full")
     context = agent._score_first_context(problem, {})
     assert context["request_spans"] == [expected_span]
     assert context["response_mode"] == _SCORE_FIRST_RESPONSE_MODE_ANSWER
@@ -204,7 +204,7 @@ def test_high_frequency_english_math_actions_create_answer_value_targets(problem
     ],
 )
 def test_high_frequency_chinese_math_actions_use_frozen_request_positions(problem):
-    agent = ReasoningAgent(RecordingClient())
+    agent = ReasoningAgent(RecordingClient(), score_first_prompt_profile="full")
     context = agent._score_first_context(problem, {})
     assert context["request_spans"] == [problem]
     assert context["response_mode"] == _SCORE_FIRST_RESPONSE_MODE_ANSWER
@@ -227,7 +227,7 @@ def test_high_frequency_chinese_math_actions_use_frozen_request_positions(proble
     ],
 )
 def test_explanation_interrogatives_request_derivation(problem):
-    agent = ReasoningAgent(RecordingClient())
+    agent = ReasoningAgent(RecordingClient(), score_first_prompt_profile="full")
     context = agent._score_first_context(problem, {})
     assert context["request_spans"]
     assert context["response_mode"] == _SCORE_FIRST_RESPONSE_MODE_DERIVATION
@@ -243,7 +243,7 @@ def test_explanation_interrogatives_request_derivation(problem):
     ],
 )
 def test_quantitative_how_questions_remain_answer_value(problem):
-    agent = ReasoningAgent(RecordingClient())
+    agent = ReasoningAgent(RecordingClient(), score_first_prompt_profile="full")
     context = agent._score_first_context(problem, {})
     assert context["response_mode"] == _SCORE_FIRST_RESPONSE_MODE_ANSWER
 
@@ -263,13 +263,13 @@ def test_quantitative_how_questions_remain_answer_value(problem):
     ],
 )
 def test_explicit_show_work_requests_are_derivations(problem):
-    agent = ReasoningAgent(RecordingClient())
+    agent = ReasoningAgent(RecordingClient(), score_first_prompt_profile="full")
     context = agent._score_first_context(problem, {})
     assert context["response_mode"] == _SCORE_FIRST_RESPONSE_MODE_DERIVATION
 
 
 def test_declarative_show_protection_remains_green():
-    agent = ReasoningAgent(RecordingClient())
+    agent = ReasoningAgent(RecordingClient(), score_first_prompt_profile="full")
     context = agent._score_first_context(
         "The data show that X is normal. Compute E[X^2].",
         {"subject": "Probability Theory"},
@@ -280,7 +280,7 @@ def test_declarative_show_protection_remains_green():
 
 def test_exactness_and_precision_discipline_is_in_system_prompt():
     client = RecordingClient()
-    agent = ReasoningAgent(client)
+    agent = ReasoningAgent(client, score_first_prompt_profile="full")
     agent.solve("Compute sqrt(2).", {"subject": "Advanced Mathematics"})
     system_prompt = client.calls[0]["messages"][0]["content"]
 
@@ -291,7 +291,7 @@ def test_exactness_and_precision_discipline_is_in_system_prompt():
 
 def test_answer_value_verification_remains_internal_and_one_line_contract_survives():
     client = RecordingClient("Final answer: 1/7")
-    agent = ReasoningAgent(client)
+    agent = ReasoningAgent(client, score_first_prompt_profile="full")
     result = agent.solve("Compute 1/7 exactly.", {"subject": "Advanced Mathematics"})
 
     assert result["final_response"] == "1/7"
@@ -304,7 +304,7 @@ def test_answer_value_verification_remains_internal_and_one_line_contract_surviv
 
 def test_prompt_budget_on_110_case_suite_stays_under_1900_chars():
     rows = _rows(ROUTING_FIXTURE)
-    agent = ReasoningAgent(RecordingClient())
+    agent = ReasoningAgent(RecordingClient(), score_first_prompt_profile="full")
     lengths = []
 
     for row in rows:
@@ -320,7 +320,7 @@ def test_prompt_budget_on_110_case_suite_stays_under_1900_chars():
 
 def test_100_successful_score_first_problems_equal_100_model_calls():
     client = RecordingClient()
-    agent = ReasoningAgent(client)
+    agent = ReasoningAgent(client, score_first_prompt_profile="full")
 
     for index in range(100):
         result = agent.solve(

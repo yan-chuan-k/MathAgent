@@ -44,7 +44,7 @@ def _rows(path: Path):
 
 
 def test_verification_block_uses_real_newlines_and_required_shape():
-    agent = ReasoningAgent(RecordingClient())
+    agent = ReasoningAgent(RecordingClient(), score_first_prompt_profile="full")
     context = agent._score_first_context(
         "Compute E[X^2].",
         {"subject": "Probability Theory"},
@@ -96,7 +96,7 @@ def test_every_score_first_mode_has_universal_completeness_invariant(
     expected_completion_text,
 ):
     client = RecordingClient()
-    agent = ReasoningAgent(client)
+    agent = ReasoningAgent(client, score_first_prompt_profile="full")
     agent.solve(problem, {"subject": subject})
     system_prompt = client.calls[0]["messages"][0]["content"]
 
@@ -105,7 +105,7 @@ def test_every_score_first_mode_has_universal_completeness_invariant(
 
 
 def test_v26_semantic_fixture_has_zero_wrong_or_misleading_checks():
-    agent = ReasoningAgent(RecordingClient())
+    agent = ReasoningAgent(RecordingClient(), score_first_prompt_profile="full")
     failures = []
 
     for row in _rows(SEMANTIC_FIXTURE):
@@ -145,7 +145,7 @@ def test_v26_semantic_fixture_has_zero_wrong_or_misleading_checks():
 
 def test_v26_fixture_expected_fields_never_enter_solver_metadata_or_prompt():
     client = RecordingClient()
-    agent = ReasoningAgent(client)
+    agent = ReasoningAgent(client, score_first_prompt_profile="full")
 
     for row in _rows(SEMANTIC_FIXTURE):
         client.calls.clear()
@@ -166,7 +166,7 @@ def test_v26_fixture_expected_fields_never_enter_solver_metadata_or_prompt():
 
 def test_v26_each_prompt_has_exactly_one_verification_block_and_one_model_call():
     client = RecordingClient()
-    agent = ReasoningAgent(client)
+    agent = ReasoningAgent(client, score_first_prompt_profile="full")
 
     for row in _rows(SEMANTIC_FIXTURE):
         client.calls.clear()
@@ -180,7 +180,7 @@ def test_v26_each_prompt_has_exactly_one_verification_block_and_one_model_call()
 
 
 def test_general_moment_checks_do_not_force_indicator_verification():
-    agent = ReasoningAgent(RecordingClient())
+    agent = ReasoningAgent(RecordingClient(), score_first_prompt_profile="full")
 
     for problem in (
         "For X~N(0,1), compute E[X^4].",
@@ -198,7 +198,7 @@ def test_general_moment_checks_do_not_force_indicator_verification():
 
 
 def test_indicator_count_target_keeps_indicator_specific_check():
-    agent = ReasoningAgent(RecordingClient())
+    agent = ReasoningAgent(RecordingClient(), score_first_prompt_profile="full")
     context = agent._score_first_context(
         "Compute the expected number of fixed points using indicator variables.",
         {"subject": "Probability Theory"},
@@ -210,7 +210,7 @@ def test_indicator_count_target_keeps_indicator_specific_check():
 
 
 def test_ols_estimator_and_covariance_receive_different_variants_same_family():
-    agent = ReasoningAgent(RecordingClient())
+    agent = ReasoningAgent(RecordingClient(), score_first_prompt_profile="full")
 
     estimator = agent._score_first_context(
         "Under full column rank, derive beta_hat.",
@@ -230,7 +230,7 @@ def test_ols_estimator_and_covariance_receive_different_variants_same_family():
 
 
 def test_newton_iteration_and_convergence_proof_receive_target_safe_checks():
-    agent = ReasoningAgent(RecordingClient())
+    agent = ReasoningAgent(RecordingClient(), score_first_prompt_profile="full")
 
     iterate = agent._score_first_context(
         "Compute one Newton iterate for f(x)=0 from the supplied x_0.",
@@ -253,7 +253,7 @@ def test_newton_iteration_and_convergence_proof_receive_target_safe_checks():
 
 
 def test_mle_estimation_and_asymptotic_targets_receive_different_checks():
-    agent = ReasoningAgent(RecordingClient())
+    agent = ReasoningAgent(RecordingClient(), score_first_prompt_profile="full")
 
     mle = agent._score_first_context(
         "Derive the MLE for theta.",
@@ -280,7 +280,7 @@ def test_mle_estimation_and_asymptotic_targets_receive_different_checks():
 
 
 def test_operator_invertibility_check_is_target_safe_for_T_and_I_minus_T():
-    agent = ReasoningAgent(RecordingClient())
+    agent = ReasoningAgent(RecordingClient(), score_first_prompt_profile="full")
 
     for problem in (
         "Determine whether T is invertible.",
@@ -298,7 +298,7 @@ def test_operator_invertibility_check_is_target_safe_for_T_and_I_minus_T():
 
 
 def test_proof_disproof_and_counterexample_checks_dominate_computational_micro():
-    agent = ReasoningAgent(RecordingClient())
+    agent = ReasoningAgent(RecordingClient(), score_first_prompt_profile="full")
 
     proof = agent._score_first_context(
         "Prove or disprove: every compact operator on an infinite-dimensional Banach space is invertible.",
@@ -319,7 +319,7 @@ def test_proof_disproof_and_counterexample_checks_dominate_computational_micro()
 
 
 def test_statistical_interval_construction_keeps_inference_micro_check():
-    agent = ReasoningAgent(RecordingClient())
+    agent = ReasoningAgent(RecordingClient(), score_first_prompt_profile="full")
 
     confidence = agent._score_first_context(
         "Construct a 95% confidence interval using the t distribution.",
@@ -335,7 +335,7 @@ def test_statistical_interval_construction_keeps_inference_micro_check():
 
 
 def test_v25_verification_fixture_high_level_keys_remain_stable():
-    agent = ReasoningAgent(RecordingClient())
+    agent = ReasoningAgent(RecordingClient(), score_first_prompt_profile="full")
     failures = []
 
     for row in _rows(V25_FIXTURE):
@@ -356,7 +356,7 @@ def test_v25_verification_fixture_high_level_keys_remain_stable():
 
 
 def test_frozen_110_prompt_budget_remains_at_most_1900_chars():
-    agent = ReasoningAgent(RecordingClient())
+    agent = ReasoningAgent(RecordingClient(), score_first_prompt_profile="full")
     lengths = []
 
     for row in _rows(ROUTING_FIXTURE):
@@ -373,7 +373,7 @@ def test_frozen_110_prompt_budget_remains_at_most_1900_chars():
 
 def test_same_call_verification_still_uses_one_call_per_problem():
     client = RecordingClient()
-    agent = ReasoningAgent(client)
+    agent = ReasoningAgent(client, score_first_prompt_profile="full")
 
     for index in range(100):
         result = agent.solve(
