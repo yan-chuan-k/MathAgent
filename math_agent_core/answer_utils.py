@@ -7,6 +7,13 @@ from typing import Any, Optional
 
 DEFAULT_FALLBACK = "无法确定"
 
+# This is a safety ceiling for legacy/orchestrated adapters, not a target
+# output length.  The score-first path intentionally bypasses this legacy
+# normalization cap.  The old 500/3000 limits could cut a legitimate list,
+# matrix, multi-part answer, or proof before the judge saw its closing clauses.
+MAX_NORMALIZED_ANSWER_CHARS = 12000
+MAX_NORMALIZED_PROOF_CHARS = 24000
+
 _PREFIX_RE = re.compile(
     r"^\s*(?:"
     r"final\s*answer|final_response|answer|result|conclusion|"
@@ -92,7 +99,11 @@ def normalize_final_response(answer: str, problem: Optional[str] = None) -> str:
     if not normalized:
         return DEFAULT_FALLBACK
 
-    max_length = 3000 if _looks_like_proof(problem or normalized) else 500
+    max_length = (
+        MAX_NORMALIZED_PROOF_CHARS
+        if _looks_like_proof(problem or normalized)
+        else MAX_NORMALIZED_ANSWER_CHARS
+    )
     if len(normalized) > max_length:
         normalized = _truncate_answer(normalized, max_length=max_length)
     return normalized or DEFAULT_FALLBACK
@@ -177,7 +188,15 @@ def _truncate_answer(text: str, max_length: int) -> str:
         lowered = sentence.lower()
         if any(marker in lowered for marker in tail_markers) and len(sentence) <= max_length:
             return sentence.strip()
-    return text[:max_length].rstrip()
+    # Prefer a complete sentence boundary inside the safety ceiling.  This is
+    # only a last-resort guard for pathological non-math output; normal answer
+    # payloads are now allowed to pass through at much larger sizes.
+    prefix = text[:max_length].rstrip()
+    boundaries = [prefix.rfind(mark) for mark in ("。", ".", "!", "?", "；", ";")]
+    boundary = max(boundaries, default=-1)
+    if boundary >= int(max_length * 0.6):
+        return prefix[: boundary + 1].rstrip()
+    return prefix
 
 
 def _strip_outer_answer_punctuation(text: str) -> str:

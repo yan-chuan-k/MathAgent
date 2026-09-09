@@ -67,8 +67,8 @@ def _injected_text(messages, problem: str) -> str:
     return system + "\n" + user
 
 
-def test_default_score_first_prompt_profile_is_minimal():
-    agent = ReasoningAgent(RecordingClient())
+def test_v29_minimal_prompt_profile_is_minimal():
+    agent = ReasoningAgent(RecordingClient(), score_first_experiment_preset="v29_minimal")
     assert agent.production_mode == "score_first"
     assert agent.score_first_prompt_profile == "minimal"
 
@@ -77,14 +77,14 @@ def test_default_score_first_prompt_profile_is_minimal():
 def test_prompt_profile_validation_is_closed_world(bad):
     if bad == "":
         # Empty input follows constructor's explicit defaulting rule.
-        assert ReasoningAgent(RecordingClient(), score_first_prompt_profile=bad).score_first_prompt_profile == "minimal"
+        assert ReasoningAgent(RecordingClient(), score_first_experiment_preset="v29_minimal", score_first_prompt_profile=bad).score_first_prompt_profile == "minimal"
     else:
         with pytest.raises(ValueError):
-            ReasoningAgent(RecordingClient(), score_first_prompt_profile=bad)
+            ReasoningAgent(RecordingClient(), score_first_experiment_preset="v29_minimal", score_first_prompt_profile=bad)
 
 
 def test_full_profile_is_explicitly_available():
-    agent = ReasoningAgent(RecordingClient(), score_first_prompt_profile="full")
+    agent = ReasoningAgent(RecordingClient(), score_first_experiment_preset="full_thinking_on")
     assert agent.score_first_prompt_profile == "full"
 
 
@@ -94,7 +94,7 @@ def test_minimal_profile_does_not_call_router(monkeypatch):
 
     monkeypatch.setattr(user_agent, "classify_problem", fail_router)
     client = RecordingClient()
-    agent = ReasoningAgent(client)
+    agent = ReasoningAgent(client, score_first_experiment_preset="v29_minimal")
 
     result = agent.solve(
         "Use the KKT conditions to maximize x subject to x<=1.",
@@ -106,7 +106,7 @@ def test_minimal_profile_does_not_call_router(monkeypatch):
 
 
 def test_minimal_uses_only_trusted_subject_and_never_router_guess():
-    trusted = ReasoningAgent(RecordingClient())
+    trusted = ReasoningAgent(RecordingClient(), score_first_experiment_preset="v29_minimal")
     messages = _prompt(
         trusted,
         "Compute P(A|B).",
@@ -114,7 +114,7 @@ def test_minimal_uses_only_trusted_subject_and_never_router_guess():
     )
     assert "Subject: Probability Theory" in messages[1]["content"]
 
-    untrusted = ReasoningAgent(RecordingClient())
+    untrusted = ReasoningAgent(RecordingClient(), score_first_experiment_preset="v29_minimal")
     messages = _prompt(
         untrusted,
         "Evaluate the contour integral by residues.",
@@ -162,7 +162,7 @@ def test_minimal_keeps_response_mode_parser_for_output_shape(
     expected_mode,
     required_system_phrase,
 ):
-    agent = ReasoningAgent(RecordingClient())
+    agent = ReasoningAgent(RecordingClient(), score_first_experiment_preset="v29_minimal")
     context = agent._score_first_prompt_context(problem, {})
     assert context["response_mode"] == expected_mode
 
@@ -180,7 +180,7 @@ def test_minimal_keeps_response_mode_parser_for_output_shape(
     ],
 )
 def test_minimal_prompt_has_no_injected_math_conditioning(problem):
-    agent = ReasoningAgent(RecordingClient())
+    agent = ReasoningAgent(RecordingClient(), score_first_experiment_preset="v29_minimal")
     messages = _prompt(agent, problem, {"subject": "advanced_math"})
     injected = _injected_text(messages, problem)
 
@@ -202,7 +202,7 @@ def test_minimal_prompt_has_no_injected_math_conditioning(problem):
 
 
 def test_minimal_answer_contract_contains_only_general_output_safety():
-    agent = ReasoningAgent(RecordingClient())
+    agent = ReasoningAgent(RecordingClient(), score_first_experiment_preset="v29_minimal")
     messages = _prompt(
         agent,
         "Compute sqrt(2).",
@@ -221,7 +221,7 @@ def test_minimal_answer_contract_contains_only_general_output_safety():
 
 def test_minimal_trace_reports_prompt_profile():
     client = RecordingClient()
-    agent = ReasoningAgent(client)
+    agent = ReasoningAgent(client, score_first_experiment_preset="v29_minimal")
     result = agent.solve("Compute 2+2.", {"subject": "Advanced Mathematics"})
 
     profile_steps = [
@@ -233,7 +233,7 @@ def test_minimal_trace_reports_prompt_profile():
 
 def test_full_trace_reports_prompt_profile():
     client = RecordingClient()
-    agent = ReasoningAgent(client, score_first_prompt_profile="full")
+    agent = ReasoningAgent(client, score_first_experiment_preset="full_thinking_on")
     result = agent.solve("Compute 2+2.", {"subject": "Advanced Mathematics"})
 
     profile_steps = [
@@ -244,7 +244,7 @@ def test_full_trace_reports_prompt_profile():
 
 
 def test_full_profile_retains_v281_conditioning_markers():
-    agent = ReasoningAgent(RecordingClient(), score_first_prompt_profile="full")
+    agent = ReasoningAgent(RecordingClient(), score_first_experiment_preset="full_thinking_on")
     problem = "Use KKT conditions to minimize x^2 subject to x>=1."
     messages = _prompt(agent, problem, {"subject": "Optimization"})
     joined = "\n".join(message["content"] for message in messages)
@@ -257,8 +257,8 @@ def test_full_profile_retains_v281_conditioning_markers():
 
 
 def test_minimal_and_full_share_frozen_inference_settings():
-    minimal = ReasoningAgent(RecordingClient())
-    full = ReasoningAgent(RecordingClient(), score_first_prompt_profile="full")
+    minimal = ReasoningAgent(RecordingClient(), score_first_experiment_preset="v29_minimal")
+    full = ReasoningAgent(RecordingClient(), score_first_experiment_preset="full_thinking_on")
 
     for agent in (minimal, full):
         assert agent.temperature == pytest.approx(0.8)
@@ -269,7 +269,7 @@ def test_minimal_and_full_share_frozen_inference_settings():
 
 def test_100_minimal_score_first_tasks_equal_100_calls():
     client = RecordingClient()
-    agent = ReasoningAgent(client)
+    agent = ReasoningAgent(client, score_first_experiment_preset="v29_minimal")
 
     for index in range(100):
         result = agent.solve(
@@ -286,7 +286,7 @@ def test_100_minimal_score_first_tasks_equal_100_calls():
 
 
 def test_minimal_frozen_110_prompt_budget_is_below_700_chars():
-    agent = ReasoningAgent(RecordingClient())
+    agent = ReasoningAgent(RecordingClient(), score_first_experiment_preset="v29_minimal")
     lengths = []
 
     for row in _rows(ROUTING):
@@ -304,7 +304,7 @@ def test_minimal_frozen_110_prompt_budget_is_below_700_chars():
 def test_full_frozen_110_prompt_budget_remains_at_most_1900_chars():
     agent = ReasoningAgent(
         RecordingClient(),
-        score_first_prompt_profile="full",
+        score_first_experiment_preset="full_thinking_on",
     )
     lengths = []
 
@@ -325,6 +325,6 @@ def test_minimal_problem_text_is_never_removed():
         "Let f(x)=x^2. Compute f(0.25), state the domain, and preserve the exact "
         "condition x>=0."
     )
-    agent = ReasoningAgent(RecordingClient())
+    agent = ReasoningAgent(RecordingClient(), score_first_experiment_preset="v29_minimal")
     messages = _prompt(agent, problem, {"subject": "Advanced Mathematics"})
     assert problem in messages[1]["content"]

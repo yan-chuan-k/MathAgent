@@ -229,6 +229,7 @@ def classify_discrete_subtype(problem_text: str, metadata: Dict[str, Any] | None
     """
     metadata = metadata if isinstance(metadata, dict) else {}
     text = " ".join(str(part or "") for part in _iter_hint_parts(problem_text, metadata)).lower()
+
     # Explicitly requested methods outrank object vocabulary within the existing
     # five discrete subtypes. No generic routing architecture changes are made.
     if re.search(
@@ -243,6 +244,31 @@ def classify_discrete_subtype(problem_text: str, metadata: Dict[str, Any] | None
         text,
     ):
         return "recurrence"
+
+    # High-signal contest wording often omits the textbook label (for example,
+    # a divisor-digit filter is number theory even when it never says
+    # "modular"). These closed-world overrides improve strategy selection for
+    # short hard statements without changing the five-subtype vocabulary.
+    if re.search(
+        r"\bgraph\b|closed\s+walk|eulerian|edge[- ]adjacent\s+cells?|"
+        r"lily\s+pads?|path\s+connects?|reach\s+.*\busing\s+steps?\b",
+        text,
+    ):
+        return "graph_theory"
+    if re.search(
+        r"(?:positive|proper)\s+divisors?|sum\s+of\s+divisors?|"
+        r"units?\s+digit|floor\s*\(|remainder\s+when|factorial\s+mod",
+        text,
+    ):
+        return "number_theory_modular"
+    if re.search(
+        r"arrange(?:ment|ments)?\b.*\bcircle\b|"
+        r"(?:balls?|objects?|letters?)\b.*\b(?:boxes|strings?|arrange|arrangements?)\b|"
+        r"(?:choose|pick)\s+(?:two|\d+)\s+rectangles?|"
+        r"count\s+the\s+(?:number\s+of\s+)?ways\b",
+        text,
+    ):
+        return "combinatorial_counting"
 
     scores: Dict[str, float] = {}
     for subtype, keywords in DISCRETE_SUBTYPE_KEYWORDS.items():

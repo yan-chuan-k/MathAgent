@@ -44,7 +44,7 @@ def _rows():
 
 
 def test_v24_parser_adversarial_fixture_has_zero_semantic_failures():
-    agent = ReasoningAgent(RecordingClient())
+    agent = ReasoningAgent(RecordingClient(), score_first_experiment_preset="v29_minimal")
     failures = []
 
     for row in _rows():
@@ -90,7 +90,7 @@ def test_v24_parser_adversarial_fixture_has_zero_semantic_failures():
     ["0.25", "1.5", "3.14159"],
 )
 def test_decimal_periods_are_not_clause_boundaries(value):
-    agent = ReasoningAgent(RecordingClient())
+    agent = ReasoningAgent(RecordingClient(), score_first_experiment_preset="v29_minimal")
     problem = f"Evaluate f({value}) using Newton interpolation."
     clauses = agent._score_first_clause_records(problem)
     assert len(clauses) == 1
@@ -108,7 +108,7 @@ def test_decimal_periods_are_not_clause_boundaries(value):
     ],
 )
 def test_protected_abbreviations_are_not_split_inside(abbreviation, problem):
-    agent = ReasoningAgent(RecordingClient())
+    agent = ReasoningAgent(RecordingClient(), score_first_experiment_preset="v29_minimal")
     clauses = agent._score_first_clause_records(problem)
     reconstructed = "".join(record["text"] for record in clauses)
     assert reconstructed == problem
@@ -126,7 +126,7 @@ def test_protected_abbreviations_are_not_split_inside(abbreviation, problem):
     ],
 )
 def test_declarative_english_action_verbs_do_not_become_request_starts(problem):
-    agent = ReasoningAgent(RecordingClient())
+    agent = ReasoningAgent(RecordingClient(), score_first_experiment_preset="v29_minimal")
     context = agent._score_first_context(problem, {})
     assert context["response_mode"] == _SCORE_FIRST_RESPONSE_MODE_ANSWER
     assert not context["request_spans"][0].lower().startswith(("show", "use", "proof"))
@@ -143,7 +143,7 @@ def test_declarative_english_action_verbs_do_not_become_request_starts(problem):
     ],
 )
 def test_chinese_noun_or_word_internal_action_characters_stay_context(problem, expected_span):
-    agent = ReasoningAgent(RecordingClient())
+    agent = ReasoningAgent(RecordingClient(), score_first_experiment_preset="v29_minimal")
     assert agent._score_first_request_spans(problem) == [expected_span]
 
 
@@ -158,7 +158,7 @@ def test_chinese_noun_or_word_internal_action_characters_stay_context(problem, e
     ],
 )
 def test_chinese_method_directives_at_request_positions_remain_target_side(problem, expected_prefix):
-    agent = ReasoningAgent(RecordingClient())
+    agent = ReasoningAgent(RecordingClient(), score_first_experiment_preset="v29_minimal")
     spans = agent._score_first_request_spans(problem)
     assert len(spans) == 1
     assert spans[0].startswith(expected_prefix)
@@ -176,12 +176,12 @@ def test_chinese_method_directives_at_request_positions_remain_target_side(probl
     ],
 )
 def test_interrogatives_create_request_spans_without_imperative_verbs(problem):
-    agent = ReasoningAgent(RecordingClient())
+    agent = ReasoningAgent(RecordingClient(), score_first_experiment_preset="v29_minimal")
     assert agent._score_first_request_spans(problem)
 
 
 def test_intent_is_classified_per_span_then_aggregated():
-    agent = ReasoningAgent(RecordingClient())
+    agent = ReasoningAgent(RecordingClient(), score_first_experiment_preset="v29_minimal")
     context = agent._score_first_context(
         "Which theorem applies? Briefly justify your choice.",
         {"subject": "Advanced Mathematics"},
@@ -196,7 +196,7 @@ def test_intent_is_classified_per_span_then_aggregated():
 
 
 def test_multiple_requested_actions_inside_one_clause_upgrade_response_mode():
-    agent = ReasoningAgent(RecordingClient())
+    agent = ReasoningAgent(RecordingClient(), score_first_experiment_preset="v29_minimal")
 
     derivation = agent._score_first_context(
         "Compute the MLE, then derive its asymptotic variance.",
@@ -215,7 +215,7 @@ def test_multiple_requested_actions_inside_one_clause_upgrade_response_mode():
 
 
 def test_explicit_negative_request_blocks_contradictory_metadata():
-    agent = ReasoningAgent(RecordingClient())
+    agent = ReasoningAgent(RecordingClient(), score_first_experiment_preset="v29_minimal")
 
     english = agent._score_first_context(
         "No proof is required. Compute the determinant.",
@@ -232,7 +232,7 @@ def test_explicit_negative_request_blocks_contradictory_metadata():
 
 def test_request_diagnostics_do_not_leak_into_score_first_prompt():
     client = RecordingClient()
-    agent = ReasoningAgent(client)
+    agent = ReasoningAgent(client, score_first_experiment_preset="v29_minimal")
     context = agent._score_first_context(
         "Compute the MLE, then derive its asymptotic variance.",
         {"subject": "Statistics"},
@@ -255,7 +255,7 @@ def test_request_diagnostics_do_not_leak_into_score_first_prompt():
 
 def test_v24_preserves_one_model_call_per_successful_problem():
     client = RecordingClient()
-    agent = ReasoningAgent(client)
+    agent = ReasoningAgent(client, score_first_experiment_preset="v29_minimal")
     for index in range(100):
         result = agent.solve(
             f"Compute 6*7 for parser regression {index}.",

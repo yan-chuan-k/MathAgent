@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import ast
+import json
 import re
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Sequence
 
 from math_agent_core.state import EvidenceStatus, VerificationEvidence, VerificationLevel
 from math_agent_core.tools.matrix_tool import MatrixTool
@@ -65,7 +66,12 @@ def run_linear_algebra_verification(result: Dict[str, Any]) -> List[Verification
     return evidence
 
 
-def run_system_inferred_matrix_verification(problem_text: str, answer: str) -> List[VerificationEvidence]:
+def run_system_inferred_matrix_verification(
+    problem_text: str,
+    answer: str,
+    *,
+    allowed_targets: Sequence[str] | None = None,
+) -> List[VerificationEvidence]:
     """Infer only unambiguous matrix tasks from the problem text.
 
     Unlike ``run_linear_algebra_verification``, these checks are system-owned
@@ -83,16 +89,43 @@ def run_system_inferred_matrix_verification(problem_text: str, answer: str) -> L
     if not normalized_answer:
         return []
     lower = text.lower()
-    targets = []
-    if target_present(text, "determinant") or "det(" in lower:
-        targets.append("determinant")
-    if target_present(text, "rank"):
-        targets.append("rank")
+    if allowed_targets is None:
+        # Legacy callers retain historical text inference.  The active V3
+        # worker supplies an explicit target enum so background mentions cannot
+        # become answer targets.
+        targets = []
+        if target_present(text, "determinant") or "det(" in lower:
+            targets.append("determinant")
+        if target_present(text, "rank"):
+            targets.append("rank")
+    else:
+        mapping = {
+            "matrix_determinant": "determinant",
+            "matrix_rank": "rank",
+        }
+        if not isinstance(allowed_targets, (list, tuple)):
+            return []
+        if any(target not in mapping for target in allowed_targets):
+            return []
+        targets = []
+        for target in allowed_targets:
+            resolved = mapping[target]
+            if resolved not in targets:
+                targets.append(resolved)
     if not targets:
         return []
     evidence: List[VerificationEvidence] = []
+    matrix_tool = MatrixTool()
+
+    def run_system_check(payload: Dict[str, Any]) -> VerificationEvidence:
+        # The V3 worker passes ``allowed_targets`` and is itself under a
+        # killable parent deadline.  Avoid a nested ThreadPoolExecutor there;
+        # legacy text-inferred callers retain MatrixTool.run's local timeout.
+        if allowed_targets is not None:
+            return matrix_tool.run_under_parent_deadline(payload)
+        return matrix_tool.run(payload)
+
     if len(targets) > 1:
-        missing = [target for target in targets if target not in lower]
         # A bare scalar cannot establish a multi-target response.
         answer_lower = normalized_answer.lower()
         mentioned = [target for target in targets if _extract_labeled_number(normalized_answer, target)]
@@ -109,7 +142,7 @@ def run_system_inferred_matrix_verification(problem_text: str, answer: str) -> L
     if "determinant" in targets:
         expected = _extract_labeled_number(answer, "determinant") if (len(targets) > 1 or re.search(r"[A-Za-z]", normalized_answer)) else normalized_answer
         if expected:
-            item = MatrixTool().run({"tool": "matrix_determinant", "arguments": {"matrix": matrix, "expected": expected}, "claim_id": "system_matrix_determinant"})
+            item = run_system_check({"tool": "matrix_determinant", "arguments": {"matrix": matrix, "expected": expected}, "claim_id": "system_matrix_determinant"})
             item.details = "System-inferred matrix determinant check; exact verification."
             item.is_decisive = True
             item.claim_scope = "full_answer" if len(targets) == 1 else "subclaim"
@@ -120,7 +153,7 @@ def run_system_inferred_matrix_verification(problem_text: str, answer: str) -> L
     if "rank" in targets:
         expected = _extract_labeled_number(answer, "rank") if len(targets) > 1 else normalized_answer
         if expected:
-            item = MatrixTool().run({"tool": "matrix_rank", "arguments": {"matrix": matrix, "expected": expected}, "claim_id": "system_matrix_rank"})
+            item = run_system_check({"tool": "matrix_rank", "arguments": {"matrix": matrix, "expected": expected}, "claim_id": "system_matrix_rank"})
             item.details = "System-inferred matrix rank check; exact verification."
             item.is_decisive = True
             item.claim_scope = "full_answer" if len(targets) == 1 else "subclaim"
@@ -137,6 +170,75 @@ def run_system_inferred_matrix_verification(problem_text: str, answer: str) -> L
             is_decisive=True, claim_scope="full_answer",
         ))
     return evidence
+
+
+def run_grounded_matrix_verification(
+    answer: str,
+    *,
+    requests: Sequence[Dict[str, Any]],
+) -> List[VerificationEvidence]:
+    """Verify matrices supplied explicitly by the parent binding layer.
+
+    This active V3 path receives no problem text and never searches for a
+    matrix.  Every determinant/rank calculation is tied to the exact nested
+    list in its request.
+    """
+
+    if not isinstance(answer, str) or not isinstance(requests, (list, tuple)):
+        return []
+    matrix_tool = MatrixTool()
+    requests = list(requests)[:4]
+    evidence: List[VerificationEvidence] = []
+    for index, request in enumerate(requests, start=1):
+        if not isinstance(request, dict):
+            continue
+        kind = request.get("kind")
+        if kind not in {"matrix_determinant", "matrix_rank"}:
+            continue
+        if len(requests) == 1:
+            expected = _extract_strict_scalar(answer)
+        else:
+            expected = _extract_labeled_number(
+                answer,
+                "determinant" if kind == "matrix_determinant" else "rank",
+            )
+        if not expected:
+            continue
+        tool_name = "matrix_determinant" if kind == "matrix_determinant" else "matrix_rank"
+        try:
+            item = matrix_tool.run_under_parent_deadline(
+                {
+                    "tool": tool_name,
+                    "arguments": {"matrix": request["matrix"], "expected": expected},
+                    "claim_id": f"grounded_{kind}_{index}",
+                }
+            )
+        except Exception as exc:
+            item = VerificationEvidence(
+                verifier="matrix_tool",
+                claim_id=f"grounded_{kind}_{index}",
+                status=EvidenceStatus.INCONCLUSIVE.value,
+                method=tool_name,
+                details=f"{type(exc).__name__}: {str(exc)[:220]}",
+                verification_level=VerificationLevel.EXACT_SYMBOLIC.value,
+                is_decisive=False,
+            )
+        item.details = (
+            f"Exact {kind} check for matrix={request['matrix']} "
+            f"(compact={json.dumps(request['matrix'], separators=(',', ':'))}). "
+            "The matrix was bound by the parent request span."
+        )
+        item.is_decisive = True
+        item.claim_scope = "full_answer" if len(requests) == 1 else "subclaim"
+        evidence.append(item)
+    return evidence[:8]
+
+
+def _extract_strict_scalar(answer: str) -> str:
+    text = str(answer or "").strip().rstrip(".")
+    if re.fullmatch(r"[+\-]?\d+(?:\.\d+)?", text):
+        return text
+    return ""
 
 
 def _extract_labeled_number(answer: str, label: str) -> str:

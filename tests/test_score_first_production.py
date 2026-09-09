@@ -47,7 +47,7 @@ class PromptSensitiveTruncationClient:
 
 def _solve(response: str, problem: str = "Compute 6*7.", metadata=None):
     client = RecordingClient(response)
-    agent = ReasoningAgent(client=client)
+    agent = ReasoningAgent(client=client, score_first_experiment_preset="v29_minimal")
     result = agent.solve(problem, metadata or {"subject": "mathematics"})
     return result, client, agent
 
@@ -118,7 +118,7 @@ def test_score_first_prompt_is_compact_free_text_not_internal_json_contract():
 
 def test_score_first_call_budget_is_exactly_one_per_successful_problem():
     client = RecordingClient("Final answer: 42")
-    agent = ReasoningAgent(client=client)
+    agent = ReasoningAgent(client=client, score_first_experiment_preset="v29_minimal")
     for index in range(100):
         result = agent.solve(f"Compute 6*7. Case {index}.", {"subject": "mathematics"})
         assert result["final_response"] == "42"
@@ -127,7 +127,7 @@ def test_score_first_call_budget_is_exactly_one_per_successful_problem():
 
 def test_score_first_caller_overrides_runtime_parameters():
     client = RecordingClient("Final answer: 42")
-    agent = ReasoningAgent(client=client, max_tokens=6000, temperature=0.07, thinking_mode=False)
+    agent = ReasoningAgent(client=client, score_first_experiment_preset="v29_minimal", max_tokens=6000, temperature=0.07, thinking_mode=False)
     agent.solve("Compute 6*7.")
     assert client.calls[0]["max_tokens"] == 6000
     assert client.calls[0]["temperature"] == 0.07
@@ -162,7 +162,7 @@ def test_truncation_simulation_shows_legacy_orchestration_cascades_but_score_fir
     assert legacy_result["final_response"]
 
     score_client = PromptSensitiveTruncationClient()
-    score_first = ReasoningAgent(client=score_client)
+    score_first = ReasoningAgent(client=score_client, score_first_experiment_preset="v29_minimal")
     score_result = score_first.solve("Compute 6*7.", {"subject": "mathematics"})
     assert score_result["final_response"] == "42"
     assert len(score_client.calls) == 1
@@ -277,7 +277,7 @@ def test_score_first_first_line_answer_survives_truncated_incomplete_tail():
 
 def test_score_first_answer_and_proof_prompts_are_separate():
     answer_client = RecordingClient("Final answer: 42")
-    answer_agent = ReasoningAgent(client=answer_client)
+    answer_agent = ReasoningAgent(client=answer_client, score_first_experiment_preset="v29_minimal")
     answer_agent.solve("Compute 6*7.")
     answer_prompt = answer_client.calls[0]["messages"][0]["content"]
     assert "Output exactly ONE visible line" in answer_prompt
@@ -286,7 +286,7 @@ def test_score_first_answer_and_proof_prompts_are_separate():
     assert "State the conclusion first" not in answer_prompt
 
     proof_client = RecordingClient("Conclusion: true.\nProof: direct.")
-    proof_agent = ReasoningAgent(client=proof_client)
+    proof_agent = ReasoningAgent(client=proof_client, score_first_experiment_preset="v29_minimal")
     proof_agent.solve("Prove that 2 is even.")
     proof_prompt = proof_client.calls[0]["messages"][0]["content"]
     assert "State the conclusion first" in proof_prompt

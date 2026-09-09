@@ -71,7 +71,7 @@ def _rows(path: Path):
 
 def test_default_score_first_uses_v28_official_sampling_profile():
     client = OfficialStyleRecordingClient()
-    agent = ReasoningAgent(client)
+    agent = ReasoningAgent(client, score_first_experiment_preset="v29_minimal")
 
     assert agent.production_mode == "score_first"
     assert agent.temperature == pytest.approx(0.8)
@@ -98,6 +98,7 @@ def test_score_first_explicit_sampling_overrides_remain_supported():
     client = OfficialStyleRecordingClient()
     agent = ReasoningAgent(
         client,
+        score_first_experiment_preset="v29_minimal",
         temperature=0.61,
         top_p=0.87,
         max_tokens=1234,
@@ -114,7 +115,7 @@ def test_score_first_explicit_sampling_overrides_remain_supported():
 
 def test_legacy_chat_signature_remains_compatible_without_top_p():
     client = LegacyRecordingClient()
-    agent = ReasoningAgent(client)
+    agent = ReasoningAgent(client, score_first_experiment_preset="v29_minimal")
 
     result = agent.solve("Compute 1+1.", {"subject": "Advanced Mathematics"})
     assert result["final_response"] == "42"
@@ -136,7 +137,7 @@ def test_orchestrated_defaults_are_not_changed_by_v28():
 
 def test_100_successful_score_first_problems_equal_100_official_style_calls():
     client = OfficialStyleRecordingClient()
-    agent = ReasoningAgent(client)
+    agent = ReasoningAgent(client, score_first_experiment_preset="v29_minimal")
 
     for index in range(100):
         result = agent.solve(
@@ -154,7 +155,7 @@ def test_100_successful_score_first_problems_equal_100_official_style_calls():
 
 def test_decisive_anti_loop_instruction_appears_exactly_once():
     client = OfficialStyleRecordingClient()
-    agent = ReasoningAgent(client, score_first_prompt_profile="full")
+    agent = ReasoningAgent(client, score_first_experiment_preset="full_thinking_on")
     agent.solve(
         "Find the expected value.",
         {"subject": "Probability Theory", "task_type": "calculation"},
@@ -171,7 +172,7 @@ def test_decisive_anti_loop_instruction_appears_exactly_once():
 
 
 def test_v28_frozen_110_prompt_budget_stays_at_most_1900_chars():
-    agent = ReasoningAgent(OfficialStyleRecordingClient(), score_first_prompt_profile="full")
+    agent = ReasoningAgent(OfficialStyleRecordingClient(), score_first_experiment_preset="full_thinking_on")
     lengths = []
 
     for row in _rows(ROUTING):

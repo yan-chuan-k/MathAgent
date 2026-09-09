@@ -4,6 +4,11 @@ from typing import Any, Dict, Iterable, List
 
 
 MAX_TRACE_CONTENT = 1000
+# Tool-augmented V3.0.6 records a few additional provenance counters while
+# retaining the correction outcome at the end of the trace.
+# Keep room for the bounded response-completion telemetry added by the
+# truncation guard while retaining a hard cap on user-visible trace size.
+MAX_TRACE_ITEMS = 40
 
 
 def make_trace_step(step: str, content: Any) -> Dict[str, str]:
@@ -17,7 +22,7 @@ def sanitize_trace(trace: Any) -> List[Dict[str, str]]:
     if not isinstance(trace, list):
         return []
     cleaned = []
-    for item in trace[:20]:
+    for item in trace[:MAX_TRACE_ITEMS]:
         if isinstance(item, dict):
             cleaned.append(make_trace_step(item.get("step", "info"), item.get("content", "")))
         else:

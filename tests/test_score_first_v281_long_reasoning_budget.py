@@ -52,7 +52,7 @@ class NoTopPClient:
 
 def test_default_score_first_uses_explicit_long_reasoning_budget():
     client = RecordingClient()
-    agent = ReasoningAgent(client)
+    agent = ReasoningAgent(client, score_first_experiment_preset="v29_minimal")
 
     assert agent.temperature == pytest.approx(0.8)
     assert agent.top_p == pytest.approx(0.95)
@@ -79,6 +79,7 @@ def test_explicit_score_first_overrides_remain_respected():
     client = RecordingClient()
     agent = ReasoningAgent(
         client,
+        score_first_experiment_preset="v29_minimal",
         temperature=0.63,
         top_p=0.88,
         max_tokens=12345,
@@ -95,7 +96,7 @@ def test_explicit_score_first_overrides_remain_respected():
 
 def test_top_p_is_omitted_for_client_without_top_p_support():
     client = NoTopPClient()
-    agent = ReasoningAgent(client)
+    agent = ReasoningAgent(client, score_first_experiment_preset="v29_minimal")
     agent.solve("Compute 1+1.", {"subject": "Advanced Mathematics"})
 
     assert len(client.calls) == 1
@@ -108,7 +109,7 @@ def test_top_p_is_omitted_for_client_without_top_p_support():
 
 def test_100_successful_tasks_still_make_exactly_100_calls():
     client = RecordingClient()
-    agent = ReasoningAgent(client)
+    agent = ReasoningAgent(client, score_first_experiment_preset="v29_minimal")
 
     for index in range(100):
         result = agent.solve(
@@ -126,7 +127,7 @@ def test_100_successful_tasks_still_make_exactly_100_calls():
 
 def test_softened_anti_loop_allows_one_correction():
     client = RecordingClient()
-    agent = ReasoningAgent(client, score_first_prompt_profile="full")
+    agent = ReasoningAgent(client, score_first_experiment_preset="full_thinking_on")
     agent.solve("Compute 3+4.", {"subject": "Advanced Mathematics"})
 
     system_prompt = client.calls[0]["messages"][0]["content"]

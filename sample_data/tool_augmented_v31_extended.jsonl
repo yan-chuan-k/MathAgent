@@ -1,0 +1,29 @@
+{"idx":"derangement_6","family":"combinatorics","operation":"derangement","arguments":{"n":6},"expected":"derangement[n=6] -> 265"}
+{"idx":"onto_5_3","family":"combinatorics","operation":"onto_functions","arguments":{"domain_size":5,"codomain_size":3},"expected":"-> 150"}
+{"idx":"stirling_4_2","family":"combinatorics","operation":"stirling2","arguments":{"n":4,"k":2},"expected":"-> 7"}
+{"idx":"catalan_4","family":"combinatorics","operation":"catalan","arguments":{"n":4},"expected":"-> 14"}
+{"idx":"stars_bars_7_3","family":"combinatorics","operation":"stars_bars","arguments":{"total":7,"variables":3,"minimum_each":0},"expected":"minimum_each=0] -> 36"}
+{"idx":"binomial_10_3","family":"combinatorics","operation":"binomial","arguments":{"n":10,"k":3},"expected":"-> 120"}
+{"idx":"multinomial","family":"combinatorics","operation":"multinomial","arguments":{"parts":[2,2,1]},"expected":"-> 30"}
+{"idx":"recurrence","family":"recurrence","operation":"linear_eval","arguments":{"initial":[2,5],"coefficients":[3,-2],"constant":0,"target_n":4},"expected":"-> 47"}
+{"idx":"gf_coefficient","family":"sympy","operation":"coefficient","arguments":{"expr":"1/((1-x)*(1-x^2))","var":"x","power":6},"expected":"coefficient[x^6 of 1/((1-x)*(1-x^2))] -> 4"}
+{"idx":"gcd","family":"number_theory","operation":"gcd","arguments":{"a":252,"b":105},"expected":"-> 21"}
+{"idx":"extended_gcd","family":"number_theory","operation":"extended_gcd","arguments":{"a":252,"b":105},"expected":"gcd=21"}
+{"idx":"mod_inverse","family":"number_theory","operation":"mod_inverse","arguments":{"a":17,"modulus":43},"expected":"-> 38"}
+{"idx":"crt","family":"number_theory","operation":"crt","arguments":{"residues":[2,3],"moduli":[5,7]},"expected":"-> x=17 mod 35"}
+{"idx":"totient","family":"number_theory","operation":"totient","arguments":{"n":36},"expected":"-> 12"}
+{"idx":"pow_mod","family":"number_theory","operation":"pow_mod","arguments":{"base":5,"exponent":117,"modulus":19},"expected":"-> 1"}
+{"idx":"factorint","family":"number_theory","operation":"factorint","arguments":{"n":360},"expected":"{2: 3, 3: 2, 5: 1}"}
+{"idx":"tree_edges","family":"graph","operation":"tree_edge_count","arguments":{"vertices":9},"expected":"-> 8"}
+{"idx":"degree_sum_edges","family":"graph","operation":"edge_count_from_degrees","arguments":{"degrees":[3,3,2,2,2,2]},"expected":"-> 7"}
+{"idx":"complete_graph","family":"graph","operation":"complete_graph_edges","arguments":{"n":6},"expected":"-> 15"}
+{"idx":"complete_bipartite","family":"graph","operation":"complete_bipartite_edges","arguments":{"m":3,"n":4},"expected":"-> 12"}
+{"idx":"cycle_space","family":"graph","operation":"cycle_space_dimension","arguments":{"vertices":6,"edges":8,"components":1},"expected":"-> 3"}
+{"idx":"eulerian","family":"graph","operation":"eulerian_degree_check","arguments":{"degrees":[2,4,2,4],"connected":true},"expected":"eulerian_circuit_criterion=True"}
+{"idx":"graphical","family":"graph","operation":"degree_sequence_graphical","arguments":{"degrees":[3,3,2,2,2]},"expected":"-> True"}
+{"idx":"newton","family":"numerical","operation":"newton_step","arguments":{"f":"x^2-2","variable":"x","x0":"3/2"},"expected":"-> 17/12"}
+{"idx":"interpolation","family":"numerical","operation":"interpolate_eval","arguments":{"points":[[0,1],[1,3],[2,7]],"evaluate_at":3},"expected":"-> 13"}
+{"idx":"nullspace","family":"matrix","operation":"nullspace","arguments":{"matrix":[[1,2],[2,4]]},"expected":"nullspace([[1,2],[2,4]]) ->"}
+{"idx":"charpoly","family":"matrix","operation":"charpoly","arguments":{"matrix":[[2,0],[0,3]],"var":"lam"},"expected":"charpoly[matrix=[[2,0],[0,3]]; var=lam] ->"}
+{"idx":"eigenvectors","family":"matrix","operation":"eigenvectors","arguments":{"matrix":[[2,0],[0,3]]},"expected":"eigenvectors([[2,0],[0,3]]) ->"}
+{"idx":"rref","family":"matrix","operation":"rref","arguments":{"matrix":[[1,2],[2,4]]},"expected":"rref([[1,2],[2,4]]) ->"}

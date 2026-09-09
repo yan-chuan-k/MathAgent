@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import inspect
 import json
 import os
 import sys
@@ -27,7 +28,26 @@ class CountingClient:
         role = _detect_call_role(kwargs.get("messages", args[0] if args else []))
         self.total_calls += 1
         self.calls_by_role[role] = self.calls_by_role.get(role, 0) + 1
-        return self.client.chat(*args, **kwargs)
+
+        # The wrapper itself accepts **kwargs, but the offline MockClient may not.
+        # Filter only wrapper-only unsupported parameters so active diagnostics
+        # exercise the same ReasoningAgent path without a false TypeError.
+        call_kwargs = dict(kwargs)
+        try:
+            signature = inspect.signature(self.client.chat)
+            supports_var_kw = any(
+                parameter.kind == inspect.Parameter.VAR_KEYWORD
+                for parameter in signature.parameters.values()
+            )
+            if not supports_var_kw:
+                call_kwargs = {
+                    key: value
+                    for key, value in call_kwargs.items()
+                    if key in signature.parameters
+                }
+        except (TypeError, ValueError):
+            pass
+        return self.client.chat(*args, **call_kwargs)
 
 
 def load_jsonl(path: Path) -> List[Dict[str, Any]]:
@@ -185,6 +205,16 @@ def evaluate(
         "run_agent": run_agent,
         "use_mock": use_mock,
         "production_mode": production_mode,
+        "experiment_preset": (
+            getattr(agent, "score_first_experiment_preset", None)
+            if agent is not None
+            else None
+        ),
+        "extended_tools": bool(
+            agent is not None
+            and production_mode == "tool_augmented"
+            and getattr(agent, "tool_augmented_extended_tools", False)
+        ),
         "valid_outputs": valid_outputs,
         "answer_evaluated": answer_evaluated,
         "answer_correct": answer_correct,
@@ -222,6 +252,8 @@ def print_summary(summary: Dict[str, Any]) -> None:
         f"route_accuracy={summary['route_accuracy']:.3f} "
         f"run_agent={summary['run_agent']} "
         f"use_mock={summary['use_mock']} "
+        f"production_mode={summary['production_mode']} "
+        f"extended_tools={str(summary['extended_tools']).lower()} "
         f"answer_accuracy={summary['answer_accuracy']} "
         f"model_calls={summary['model_calls']} "
         f"calls_per_problem={summary['model_calls_per_problem']:.3f} "
@@ -278,9 +310,9 @@ def main() -> None:
     parser.add_argument("--no-thinking-mode", action="store_true")
     parser.add_argument(
         "--production-mode",
-        choices=("score_first", "orchestrated"),
+        choices=("score_first", "tool_augmented", "orchestrated"),
         default="score_first",
-        help="Use ScoreFirst by default; select orchestrated only for explicit legacy diagnostics.",
+        help="Select score_first, active two-stage tool_augmented, or legacy orchestrated diagnostics.",
     )
     parser.add_argument("--idx", action="append", help="Run only the case with this idx. Can be repeated.")
     args = parser.parse_args()

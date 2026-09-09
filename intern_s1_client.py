@@ -4,6 +4,8 @@ import random
 import time
 from typing import Any, Dict, Optional
 
+from math_agent_core.output_guard import finish_reason, response_content
+
 try:
     from dotenv import load_dotenv
 except ImportError:
@@ -41,6 +43,10 @@ class InternS1Client:
         self.max_tokens = max_tokens
         self.thinking_mode = thinking_mode
         self.retry = retry
+        # Keep transport metadata out of the public answer string, but retain it
+        # for the caller's one-shot incomplete-response recovery decision.
+        self.last_response_metadata: Dict[str, Any] = {}
+        self.last_finish_reason = ""
         self.client = OpenAI(
             api_key=self.api_key,
             base_url=base_url,
@@ -70,9 +76,15 @@ class InternS1Client:
                 if top_p is not None:
                     request_kwargs["top_p"] = top_p
                 response = self.client.chat.completions.create(**request_kwargs)
-                content = response.choices[0].message.content
+                content = response_content(response)
                 if not content:
                     raise RuntimeError("Intern-S1 returned empty content")
+                reason = finish_reason(response)
+                self.last_finish_reason = reason
+                self.last_response_metadata = {
+                    "finish_reason": reason,
+                    "usage": getattr(response, "usage", None),
+                }
                 return content
             except Exception as exc:
                 last_error = exc

@@ -12,6 +12,27 @@ result = agent.solve(problem, metadata)
 
 `result` is a JSON-serializable `dict` with a non-empty `final_response` and optional `trace`.
 
+## Current V3 Submission
+
+The release default is `tool_augmented_v307_cross_subject`: a controlled
+two-call tool-extractor → deterministic-tools → FULL final-solver path. It
+keeps the mature FULL ScoreFirst conditioning and adds only bounded, exact
+evidence for high-frequency algebra/calculus, probability, linear algebra,
+discrete mathematics, graph theory, recurrence, generating-function, and
+number-theory subcomputations. The final solver keeps internal thinking enabled
+with a 49152-token completion budget; the visible-output discipline requests a
+compact complete answer so extra budget is used for reasoning rather than
+repeated scratch work. `tool_augmented_v306_cross_subject`,
+`tool_augmented_v305_full_final`, and `full_thinking_on` remain available as
+rollback arms.
+
+Both deterministic tool execution and post-answer verification use the fixed
+repository subprocess module `math_agent_core.tools.augmented_worker`. Model
+content is transferred as JSON data over stdin; no model-derived command,
+shell execution, or multiprocessing fork is used. A decisive verification
+failure may trigger one correction call, so the normal path uses two model
+calls and the absolute maximum is three.
+
 ## Install
 
 ```bash
@@ -48,6 +69,7 @@ The repository includes one nontrivial diagnostic problem for each routed domain
 ```bash
 python diagnose_hard_cases.py --output_file sample_outputs/hard_route_summary.json
 python diagnose_hard_cases.py --mock --run-agent --output_file sample_outputs/hard_mock_summary.json
+python diagnose_hard_cases.py --mock --run-agent --production-mode tool_augmented
 python main.py --input_file sample_data/hard_diagnostics.jsonl --output_dir sample_outputs_hard_mock --mock
 ```
 
@@ -58,6 +80,15 @@ Current offline diagnostic result:
 ```text
 18 / 18 hard diagnostic cases routed to the expected domain.
 18 / 18 hard diagnostic cases completed through the mock ReasoningAgent pipeline.
+
+V3.0.7 adds a closed-world parent-bound recognizer for explicit common
+structures such as restricted compositions, derangements, onto functions,
+multiset permutations, Catalan/triangulation counts, finite recurrences,
+generating-function coefficients, modular congruences, and standard graph
+invariants. On `sample_data/discrete_math_realistic_eval_v1.jsonl`, the V3.0.7
+recognizer produced at least one exact request for 100/100 rows. This is
+request coverage, not a claim of answer accuracy; the real Judge remains the
+authoritative benchmark.
 ```
 
 Current real diagnostic notes with local `.env`:
@@ -67,6 +98,33 @@ Current real diagnostic notes with local `.env`:
 The differential-geometry case exposed a model formatting issue where K=1 appeared in verification but not final_response.
 ReasoningAgent now repairs this specific missing Gaussian-curvature value from structured verification evidence.
 ```
+
+## Post-V3.0.7 reliability hardening
+
+`V308_HARDENING_NOTES.md` documents a compatibility-preserving patch for
+provider length stops and incomplete proof-like responses. Complete answer-first
+lines remain one-call stable; only high-confidence incomplete outputs use one
+bounded recovery call. The patch also removes the old small legacy extraction
+caps and adds several explicit-input exact subcomputations.
+
+## V3.0.9 Public Hard Stress Set
+
+`sample_data/web_hard_stress_v1.jsonl` contains 35 paraphrased problems from
+official HMMT February 2025 and IMO 2025 papers, spanning number theory,
+algebra, combinatorics, graph theory, probability, Euclidean geometry, and
+olympiad proofs. `evaluate_web_hard_stress.py` strips all oracle fields before
+calling the agent and grades only after a response is returned:
+
+```bash
+python evaluate_web_hard_stress.py --output_json sample_outputs/web_hard_stress_v1.json --output_md sample_outputs/web_hard_stress_v1.md
+python evaluate_web_hard_stress.py --run-agent --mock --limit 3
+python evaluate_web_hard_stress.py --run-agent
+```
+
+The first command is route-only. The mock command checks the pipeline only and
+is explicitly not a model-accuracy result. The live command requires
+`INTERN_API_KEY`; if it is absent, the evaluator writes a clear blocked report
+and never substitutes mock answers for real accuracy.
 
 ## Benchmark Distribution Strategy
 

@@ -197,7 +197,7 @@ class SafeSympyTool:
             claim_id=claim_id,
             status=status,
             method="equation_solution",
-            details=f"Substituted {variable_name}={value} into the candidate equation.",
+            details=f"Substituted {variable_name}={value} into {equation}.",
             residual=str(residual),
             verification_level=VerificationLevel.EXACT_SYMBOLIC.value,
             is_decisive=True,
@@ -248,7 +248,7 @@ class SafeSympyTool:
                 details="Safe solveset did not return a finite solution set.",
                 verification_level=VerificationLevel.EXACT_SYMBOLIC.value, is_decisive=False,
             )
-        candidate_values = _extract_solution_values(answer)
+        candidate_values = _extract_answer_values_for_variable(answer, variable_name)
         if not candidate_values:
             return VerificationEvidence(
                 verifier=self.verifier_name, claim_id=claim_id,
@@ -261,7 +261,8 @@ class SafeSympyTool:
         status = EvidenceStatus.PASS.value if candidate_set == expected else EvidenceStatus.FAIL.value
         return VerificationEvidence(
             verifier=self.verifier_name, claim_id=claim_id, status=status,
-            method="equation_solution_set", details="Compared candidate roots with SymPy solveset.",
+            method="equation_solution_set",
+            details=f"Compared candidate roots for {equation} with SymPy solveset.",
             residual=str(residual), verification_level=VerificationLevel.EXACT_SYMBOLIC.value,
             is_decisive=True, claim_scope="full_answer" if status == EvidenceStatus.PASS.value else "subclaim",
         )
@@ -309,6 +310,218 @@ class SafeSympyTool:
 
 def run_sympy_verification(problem_text: str, answer: str, result: Dict[str, Any]) -> List[VerificationEvidence]:
     return SafeSympyTool().verify(problem_text=problem_text, answer=answer, result=result)
+
+
+def run_targeted_sympy_verification(
+    problem_text: str,
+    answer: str,
+    *,
+    targets: List[str] | tuple[str, ...],
+) -> List[VerificationEvidence]:
+    """Run only system-owned V3 verification targets without a thread timeout.
+
+    This function is called exclusively inside the killable fixed subprocess.
+    The parent owns the complete wall-clock deadline, so the legacy
+    ``ThreadPoolExecutor`` timeout is neither needed nor used on the active V3
+    path.
+    """
+
+    allowed = {
+        "pure_arithmetic",
+        "equation_solution",
+        "equation_solution_set",
+    }
+    if not isinstance(targets, (list, tuple)) or any(target not in allowed for target in targets):
+        return []
+    selected = []
+    for target in targets:
+        if target not in selected:
+            selected.append(target)
+    if not selected or not _sympy_available():
+        return []
+
+    text = str(problem_text or "")
+    final_answer = str(answer or "").strip()
+    tool = SafeSympyTool()
+    evidence: List[VerificationEvidence] = []
+
+    def run_direct(spec: Dict[str, Any], claim_id: str) -> None:
+        try:
+            evidence.append(tool._run_check_now(spec["tool"], spec["arguments"], claim_id))
+        except Exception as exc:
+            evidence.append(
+                VerificationEvidence(
+                    verifier=tool.verifier_name,
+                    claim_id=claim_id,
+                    status=EvidenceStatus.INCONCLUSIVE.value,
+                    method=str(spec.get("tool") or "deterministic_check"),
+                    details=f"{type(exc).__name__}: {str(exc)[:220]}",
+                    verification_level=VerificationLevel.EXACT_SYMBOLIC.value,
+                    is_decisive=False,
+                )
+            )
+
+    if "pure_arithmetic" in selected:
+        arithmetic = _extract_simple_arithmetic(text)
+        numeric_answer = _extract_single_number(final_answer)
+        if arithmetic and numeric_answer is not None:
+            run_direct(
+                {
+                    "tool": "numeric_arithmetic",
+                    "arguments": {"expression": arithmetic, "expected": numeric_answer},
+                },
+                "targeted_numeric_arithmetic",
+            )
+
+    if "equation_solution" in selected or "equation_solution_set" in selected:
+        equation = _extract_first_equation(text)
+        variable = _infer_variable(text, final_answer)
+        if equation and "equation_solution" in selected:
+            for index, value in enumerate(_extract_answer_values(final_answer)[:4], start=1):
+                run_direct(
+                    {
+                        "tool": "equation_solution",
+                        "arguments": {
+                            "equation": equation,
+                            "variable": variable,
+                            "value": value,
+                        },
+                    },
+                    f"targeted_equation_solution_{index}",
+                )
+        if equation and "equation_solution_set" in selected:
+            run_direct(
+                {
+                    "tool": "equation_solution_set",
+                    "arguments": {
+                        "equation": equation,
+                        "variable": variable,
+                        "answer": final_answer,
+                        "domain": _infer_solution_domain(text),
+                    },
+                },
+                "targeted_equation_solution_set",
+            )
+
+    return evidence[:8]
+
+
+def run_grounded_sympy_verification(
+    answer: str,
+    *,
+    requests: List[Dict[str, Any]] | tuple[Dict[str, Any], ...],
+) -> List[VerificationEvidence]:
+    """Verify only the exact expressions supplied by the parent.
+
+    Unlike the legacy target-dispatch helper above, this function never sees a
+    problem statement and therefore cannot select a first equation or infer a
+    target from background text.  The fixed worker validates the request
+    schema before calling this function.
+    """
+
+    if not isinstance(requests, (list, tuple)) or not isinstance(answer, str):
+        return []
+    tool = SafeSympyTool()
+    evidence: List[VerificationEvidence] = []
+    for index, request in enumerate(requests[:4], start=1):
+        if not isinstance(request, dict):
+            continue
+        kind = request.get("kind")
+        if kind == "pure_arithmetic":
+            candidate = _extract_strict_numeric_answer(answer)
+            if candidate is not None:
+                try:
+                    evidence.append(
+                        tool._run_check_now(
+                            "numeric_arithmetic",
+                            {"expression": request["expression"], "expected": candidate},
+                            f"grounded_numeric_arithmetic_{index}",
+                        )
+                    )
+                except Exception as exc:
+                    evidence.append(_inconclusive_grounded_evidence("numeric_arithmetic", exc, index))
+        elif kind == "equation_solution":
+            variable = request.get("variable")
+            values = _extract_answer_values_for_variable(answer, variable)
+            for value_index, value in enumerate(values[:4], start=1):
+                try:
+                    evidence.append(
+                        tool._run_check_now(
+                            "equation_solution",
+                            {
+                                "equation": request["equation"],
+                                "variable": variable,
+                                "value": value,
+                            },
+                            f"grounded_equation_solution_{index}_{value_index}",
+                        )
+                    )
+                except Exception as exc:
+                    evidence.append(_inconclusive_grounded_evidence("equation_solution", exc, index))
+        elif kind == "equation_solution_set":
+            try:
+                evidence.append(
+                    tool._run_check_now(
+                        "equation_solution_set",
+                        {
+                            "equation": request["equation"],
+                            "variable": request["variable"],
+                            "answer": answer,
+                            "domain": request["domain"],
+                        },
+                        f"grounded_equation_solution_set_{index}",
+                    )
+                )
+            except Exception as exc:
+                evidence.append(_inconclusive_grounded_evidence("equation_solution_set", exc, index))
+    return evidence[:8]
+
+
+def _inconclusive_grounded_evidence(method: str, exc: Exception, index: int) -> VerificationEvidence:
+    return VerificationEvidence(
+        verifier="safe_sympy",
+        claim_id=f"grounded_{method}_{index}",
+        status=EvidenceStatus.INCONCLUSIVE.value,
+        method=method,
+        details=f"{type(exc).__name__}: {str(exc)[:220]}",
+        verification_level=VerificationLevel.EXACT_SYMBOLIC.value,
+        is_decisive=False,
+    )
+
+
+def _extract_strict_numeric_answer(answer: str) -> Optional[str]:
+    text = str(answer or "").strip().rstrip(".")
+    if not re.fullmatch(r"[+\-]?\d+(?:/\d+)?(?:\.\d+)?", text):
+        return None
+    try:
+        _parse_expr(text)
+    except Exception:
+        return None
+    return text
+
+
+def _extract_answer_values_for_variable(answer: str, variable: Any) -> List[Any]:
+    variable_name = str(variable or "")
+    if not re.fullmatch(r"[A-Za-z]", variable_name):
+        return []
+    text = str(answer or "").strip()
+    pattern = re.compile(
+        rf"\b{re.escape(variable_name)}\s*=\s*([^,;]+?)(?=\s+(?:and|or|或)\b|[,;]|$)",
+        flags=re.IGNORECASE,
+    )
+    matches = pattern.findall(text)
+    if matches:
+        values: List[Any] = []
+        for raw in matches[:4]:
+            cleaned = re.sub(r"\s+(?:only|alone)\s*$", "", raw.strip(), flags=re.IGNORECASE)
+            try:
+                values.append(_parse_expr(cleaned.rstrip(".")))
+            except Exception:
+                return []
+        return values
+    if "=" in text:
+        return []
+    return _extract_solution_values(text)
 
 
 def _run_with_timeout(callback):
@@ -448,7 +661,8 @@ def _extract_answer_values(answer: str) -> List[str]:
     values: List[str] = []
     for raw in bound:
         try:
-            values.append(str(_parse_expr(raw.strip().rstrip("."))))
+            cleaned = re.sub(r"\s+(?:only|alone)\s*$", "", raw.strip(), flags=re.IGNORECASE)
+            values.append(str(_parse_expr(cleaned.rstrip("."))))
         except Exception:
             return []
     if values:
@@ -565,6 +779,9 @@ def _extract_solution_values(answer: str) -> list[Any]:
         except Exception:
             return []
     compact = text.strip().strip("{}[]")
+    words = re.findall(r"[A-Za-z]+", compact)
+    if any(word.lower() not in {"sqrt", "pi", "e", "i", "or"} for word in words):
+        return []
     chunks = re.split(r"\s*(?:or|或|,|;)\s*", compact, flags=re.IGNORECASE)
     if not chunks or any(not chunk.strip() for chunk in chunks):
         return []

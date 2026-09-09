@@ -18,7 +18,7 @@ class ThinkingMockClient:
 
 
 def test_user_agent_entry_returns_final_response():
-    agent = ReasoningAgent(client=MockClient())
+    agent = ReasoningAgent(client=MockClient(), score_first_experiment_preset="v29_minimal")
     result = agent.solve("1+1=?", {"idx": 0})
 
     assert isinstance(result, dict)
@@ -27,7 +27,7 @@ def test_user_agent_entry_returns_final_response():
 
 
 def test_user_agent_result_is_json_serializable():
-    agent = ReasoningAgent(client=MockClient())
+    agent = ReasoningAgent(client=MockClient(), score_first_experiment_preset="v29_minimal")
     result = agent.solve("1+1=?", {"idx": 0})
 
     json.dumps(result, ensure_ascii=False)
@@ -35,7 +35,7 @@ def test_user_agent_result_is_json_serializable():
 
 def test_user_agent_enables_thinking_mode_when_client_supports_it():
     client = ThinkingMockClient()
-    agent = ReasoningAgent(client=client, thinking_mode=True)
+    agent = ReasoningAgent(client=client, score_first_experiment_preset="v29_minimal", thinking_mode=True)
     result = agent.solve("1+1=?", {"idx": 0})
 
     assert result["final_response"].strip()

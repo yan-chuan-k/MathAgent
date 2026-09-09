@@ -49,7 +49,7 @@ def _rows(path: Path):
 
 
 def test_v27_adversarial_fixture_has_zero_semantic_failures():
-    agent = ReasoningAgent(RecordingClient(), score_first_prompt_profile="full")
+    agent = ReasoningAgent(RecordingClient(), score_first_experiment_preset="full_thinking_on")
     failures = []
 
     for row in _rows(ADVERSARIAL):
@@ -103,7 +103,7 @@ def test_exact_frozen_v2_fixed_point_case_uses_fixed_point_safe_verification():
         "condition ensuring convergence near a fixed point."
     )
 
-    agent = ReasoningAgent(RecordingClient(), score_first_prompt_profile="full")
+    agent = ReasoningAgent(RecordingClient(), score_first_experiment_preset="full_thinking_on")
     context = agent._score_first_context(
         frozen["problem"],
         {"subject": frozen["expected_domain"], "task_type": frozen["task_type"]},
@@ -129,7 +129,7 @@ def test_exact_frozen_v2_fixed_point_case_uses_fixed_point_safe_verification():
     ],
 )
 def test_request_position_show_establish_demonstrate_are_proof_intents(problem):
-    agent = ReasoningAgent(RecordingClient(), score_first_prompt_profile="full")
+    agent = ReasoningAgent(RecordingClient(), score_first_experiment_preset="full_thinking_on")
     context = agent._score_first_context(problem, {})
     assert context["request_spans"]
     assert context["response_mode"] == _SCORE_FIRST_RESPONSE_MODE_PROOF
@@ -144,7 +144,7 @@ def test_request_position_show_establish_demonstrate_are_proof_intents(problem):
     ],
 )
 def test_show_work_forms_remain_derivation(problem):
-    agent = ReasoningAgent(RecordingClient(), score_first_prompt_profile="full")
+    agent = ReasoningAgent(RecordingClient(), score_first_experiment_preset="full_thinking_on")
     context = agent._score_first_context(problem, {})
     assert context["response_mode"] == _SCORE_FIRST_RESPONSE_MODE_DERIVATION
 
@@ -157,7 +157,7 @@ def test_show_work_forms_remain_derivation(problem):
     ],
 )
 def test_display_like_show_forms_remain_answer_value(problem):
-    agent = ReasoningAgent(RecordingClient(), score_first_prompt_profile="full")
+    agent = ReasoningAgent(RecordingClient(), score_first_experiment_preset="full_thinking_on")
     context = agent._score_first_context(problem, {})
     assert context["response_mode"] == _SCORE_FIRST_RESPONSE_MODE_ANSWER
 
@@ -177,14 +177,14 @@ def test_display_like_show_forms_remain_answer_value(problem):
     ],
 )
 def test_declarative_show_protection_remains_exact(problem, expected_span):
-    agent = ReasoningAgent(RecordingClient(), score_first_prompt_profile="full")
+    agent = ReasoningAgent(RecordingClient(), score_first_experiment_preset="full_thinking_on")
     context = agent._score_first_context(problem, {})
     assert context["request_spans"] == [expected_span]
     assert context["response_mode"] == _SCORE_FIRST_RESPONSE_MODE_ANSWER
 
 
 def test_newton_and_fixed_point_convergence_checks_are_distinct():
-    agent = ReasoningAgent(RecordingClient(), score_first_prompt_profile="full")
+    agent = ReasoningAgent(RecordingClient(), score_first_experiment_preset="full_thinking_on")
 
     fixed = agent._score_first_context(
         "For x_{n+1}=cos(x_n), determine the local fixed-point convergence condition.",
@@ -204,7 +204,7 @@ def test_newton_and_fixed_point_convergence_checks_are_distinct():
 
 
 def test_verification_paraphrases_select_target_safe_variants():
-    agent = ReasoningAgent(RecordingClient(), score_first_prompt_profile="full")
+    agent = ReasoningAgent(RecordingClient(), score_first_experiment_preset="full_thinking_on")
 
     count = agent._score_first_context(
         "Find the mean number of fixed points.",
@@ -236,7 +236,7 @@ def test_verification_paraphrases_select_target_safe_variants():
 
 
 def test_high_risk_domain_fallback_replacements_are_method_appropriate():
-    agent = ReasoningAgent(RecordingClient(), score_first_prompt_profile="full")
+    agent = ReasoningAgent(RecordingClient(), score_first_experiment_preset="full_thinking_on")
 
     clt = agent._score_first_context(
         "Use the CLT to approximate the probability.",
@@ -282,7 +282,7 @@ def test_high_risk_domain_fallback_replacements_are_method_appropriate():
 
 
 def test_bias_variance_sufficiency_uses_only_requested_branch():
-    agent = ReasoningAgent(RecordingClient(), score_first_prompt_profile="full")
+    agent = ReasoningAgent(RecordingClient(), score_first_experiment_preset="full_thinking_on")
 
     bias = agent._score_first_context(
         "Compute the bias of the estimator T.",
@@ -334,7 +334,7 @@ def test_v27_inventory_documents_all_30_v26_domain_fallback_families():
 
 def test_v27_fixture_has_one_internal_check_and_one_call_per_problem():
     client = RecordingClient()
-    agent = ReasoningAgent(client, score_first_prompt_profile="full")
+    agent = ReasoningAgent(client, score_first_experiment_preset="full_thinking_on")
 
     for row in _rows(ADVERSARIAL):
         client.calls.clear()
@@ -349,7 +349,7 @@ def test_v27_fixture_has_one_internal_check_and_one_call_per_problem():
 
 
 def test_frozen_110_prompt_budget_remains_at_most_1900_chars():
-    agent = ReasoningAgent(RecordingClient(), score_first_prompt_profile="full")
+    agent = ReasoningAgent(RecordingClient(), score_first_experiment_preset="full_thinking_on")
     lengths = []
 
     for row in _rows(ROUTING):
@@ -366,7 +366,7 @@ def test_frozen_110_prompt_budget_remains_at_most_1900_chars():
 
 def test_100_successful_score_first_problems_still_equal_100_model_calls():
     client = RecordingClient()
-    agent = ReasoningAgent(client, score_first_prompt_profile="full")
+    agent = ReasoningAgent(client, score_first_experiment_preset="full_thinking_on")
 
     for index in range(100):
         result = agent.solve(

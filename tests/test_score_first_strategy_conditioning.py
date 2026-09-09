@@ -60,7 +60,7 @@ class RecordingClient:
 
 def _prompt_for(problem: str, subject: str):
     client = RecordingClient()
-    agent = ReasoningAgent(client=client, score_first_prompt_profile="full")
+    agent = ReasoningAgent(client=client, score_first_experiment_preset="full_thinking_on")
     result = agent.solve(problem, {"subject": subject})
     assert result["final_response"] == "42"
     assert len(client.calls) == 1
@@ -123,7 +123,7 @@ def test_score_first_selects_exactly_one_compact_domain_strategy(domain, problem
 )
 def test_discrete_math_injects_only_selected_subtype_card(subtype, problem):
     client = RecordingClient()
-    agent = ReasoningAgent(client=client, score_first_prompt_profile="full")
+    agent = ReasoningAgent(client=client, score_first_experiment_preset="full_thinking_on")
     result = agent.solve(problem, {"subject": "discrete_math"})
     assert result["final_response"] == "42"
     assert len(client.calls) == 1
@@ -163,7 +163,7 @@ def test_strategy_prompt_overhead_is_compact():
 
 def test_strategy_conditioning_preserves_one_call_budget_for_100_successes():
     client = RecordingClient("Final answer: 42")
-    agent = ReasoningAgent(client=client, score_first_prompt_profile="full")
+    agent = ReasoningAgent(client=client, score_first_experiment_preset="full_thinking_on")
     domains = list(HARD_DOMAINS)
     for index in range(100):
         domain = domains[index % len(domains)]

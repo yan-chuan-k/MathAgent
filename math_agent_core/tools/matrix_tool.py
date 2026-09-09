@@ -44,6 +44,25 @@ class MatrixTool(MathTool):
         except Exception as exc:
             return self.inconclusive(str(payload.get("claim_id") or "matrix_check"), str(payload.get("tool") or "matrix"), f"{type(exc).__name__}: {str(exc)[:220]}")
 
+    def run_under_parent_deadline(self, payload: Dict[str, Any]) -> VerificationEvidence:
+        """Run directly when an outer killable process owns the timeout.
+
+        The V3 verification worker has a parent-enforced absolute deadline.  A
+        nested thread timeout would not make a non-cooperative SymPy call
+        killable, whereas the worker process is safely terminable as a whole.
+        Legacy callers continue to use :meth:`run`.
+        """
+
+        try:
+            self.validate_input(payload)
+            return self._run_now(payload)
+        except Exception as exc:
+            return self.inconclusive(
+                str(payload.get("claim_id") or "matrix_check"),
+                str(payload.get("tool") or "matrix"),
+                f"{type(exc).__name__}: {str(exc)[:220]}",
+            )
+
     def _run_now(self, payload: Dict[str, Any]) -> VerificationEvidence:
         tool = str(payload.get("tool") or "")
         args = payload.get("arguments") if isinstance(payload.get("arguments"), dict) else {}
