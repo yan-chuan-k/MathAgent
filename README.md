@@ -126,6 +126,25 @@ is explicitly not a model-accuracy result. The live command requires
 `INTERN_API_KEY`; if it is absent, the evaluator writes a clear blocked report
 and never substitutes mock answers for real accuracy.
 
+## V3.1.0 Live Evaluation Hardening
+
+The live evaluator now distinguishes completed model rows from transport and
+solver failures. A run with any unmeasured row is reported as
+`live_model_partial` with `decision_grade: false`; failed requests never count
+as wrong mathematical answers. Numeric answer-first outputs such as
+`103 (9! = 362880)` are graded from their leading answer value.
+
+For providers with long reasoning latency, the transport settings can be
+overridden locally without changing source code:
+
+```bash
+export INTERN_API_TIMEOUT=180
+export INTERN_API_RETRY=3
+```
+
+The full evidence and interpretation rules are documented in
+`V310_LIVE_EVAL_HARDENING_REPORT.md`.
+
 ## Benchmark Distribution Strategy
 
 The router uses the observed 112-problem distribution as a tie-breaking prior. The solver prompt does not see the full distribution; it receives only the routed domain hint.

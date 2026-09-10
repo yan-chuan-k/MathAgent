@@ -42,6 +42,20 @@ def test_numeric_conclusion_patterns_do_not_scan_arbitrary_numbers():
     assert grade_primary_answer("The proof uses 1/2 in an intermediate bound, but the final value is 1/3.", spec)["correct"] is False
 
 
+def test_numeric_answer_first_value_survives_parenthesized_explanation():
+    spec = {"primary": "103", "primary_type": "numeric"}
+    result = grade_primary_answer("103 (9! = 362880)", spec)
+    assert result["correct"] is True
+    assert result["extracted"] == "103"
+
+
+def test_numeric_answer_first_value_does_not_hide_later_explicit_answer():
+    spec = {"primary": "132", "primary_type": "numeric"}
+    result = grade_primary_answer("132 (the answer is 131)", spec)
+    assert result["correct"] is False
+    assert result["extracted"] == "131"
+
+
 def test_symbolic_prose_conclusion_extraction():
     assert grade_primary_answer(
         "The contour integral equals pi*(e^(-1)-e).",

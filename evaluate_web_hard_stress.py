@@ -99,10 +99,20 @@ def _build_client(*, use_mock: bool, thinking_mode: bool) -> Any:
         raise RuntimeError(
             "INTERN_API_KEY is not configured; live model accuracy cannot be measured."
         )
+
+    def env_int(name: str, default: int, minimum: int) -> int:
+        raw = os.getenv(name, str(default)).strip()
+        try:
+            return max(minimum, int(raw))
+        except ValueError as exc:
+            raise RuntimeError(f"{name} must be an integer") from exc
+
     return InternS1Client(
         model=os.getenv("INTERN_MODEL", "intern-s2-preview-397b"),
         base_url=os.getenv("INTERN_API_BASE", "https://chat.intern-ai.org.cn/api/v1/"),
         thinking_mode=thinking_mode,
+        timeout=env_int("INTERN_API_TIMEOUT", 180, 10),
+        retry=env_int("INTERN_API_RETRY", 3, 1),
     )
 
 
@@ -115,6 +125,33 @@ def _trace_map(result: Any) -> Dict[str, str]:
         for item in trace
         if isinstance(item, dict) and item.get("step")
     }
+
+
+_TRANSPORT_ERROR_MARKERS = (
+    "timed out",
+    "timeout",
+    "connection error",
+    "connection refused",
+    "network error",
+    "temporary failure",
+    "rate limit",
+    "429",
+    "502",
+    "503",
+    "504",
+    "server error",
+)
+
+
+def _classify_solver_error(error: str) -> str:
+    """Classify a trace error without treating it as a wrong answer."""
+
+    normalized = str(error or "").strip().lower()
+    if not normalized:
+        return ""
+    if any(marker in normalized for marker in _TRANSPORT_ERROR_MARKERS):
+        return "transport_error"
+    return "solver_error"
 
 
 def evaluate(
@@ -142,6 +179,9 @@ def evaluate(
     correct_numeric = 0
     unresolved_numeric = 0
     manual_review = 0
+    completed_items = 0
+    transport_error_items = 0
+    solver_error_items = 0
     rows_out: List[Dict[str, Any]] = []
 
     for item in rows:
@@ -160,22 +200,36 @@ def evaluate(
         grading: Dict[str, Any] | None = None
         trace: Dict[str, str] = {}
         model_calls = 0
+        evaluation_status = "not_run"
+        error_kind = ""
+        model_error = ""
         if agent is not None and client is not None:
             before = client.total_calls
             result = agent.solve(problem, metadata)
             model_calls = client.total_calls - before
             final_response = str(result.get("final_response") or "").strip() if isinstance(result, dict) else ""
             trace = _trace_map(result)
-            grading_spec = item.get("grading") if isinstance(item.get("grading"), dict) else {}
-            if grading_spec.get("primary_type") == "numeric":
-                evaluated_numeric += 1
-                grading = grade_full_problem(final_response, grading_spec)
-                if grading.get("correct") is True:
-                    correct_numeric += 1
-                elif grading.get("correct") is None:
-                    unresolved_numeric += 1
+            model_error = str(trace.get("error") or "").strip()
+            error_kind = _classify_solver_error(model_error)
+            if error_kind:
+                evaluation_status = error_kind
+                if error_kind == "transport_error":
+                    transport_error_items += 1
+                else:
+                    solver_error_items += 1
             else:
-                manual_review += 1
+                evaluation_status = "completed"
+                completed_items += 1
+                grading_spec = item.get("grading") if isinstance(item.get("grading"), dict) else {}
+                if grading_spec.get("primary_type") == "numeric":
+                    evaluated_numeric += 1
+                    grading = grade_full_problem(final_response, grading_spec)
+                    if grading.get("correct") is True:
+                        correct_numeric += 1
+                    elif grading.get("correct") is None:
+                        unresolved_numeric += 1
+                else:
+                    manual_review += 1
 
         rows_out.append(
             {
@@ -189,6 +243,9 @@ def evaluate(
                 "final_response": final_response,
                 "grading": grading,
                 "model_calls": model_calls,
+                "evaluation_status": evaluation_status,
+                "error_kind": error_kind,
+                "model_error": model_error,
                 "output_truncated_detected": trace.get("output_truncated_detected") == "true",
                 "recovery_kept": trace.get("recovery_kept") == "true",
                 "correction_kept": trace.get("correction_kept") == "true",
@@ -198,10 +255,20 @@ def evaluate(
 
     total = len(rows)
     live_run = bool(agent is not None and not use_mock)
+    unmeasured_items = total - completed_items if run_agent and not blocked_reason else total
+    numeric_total = sum(
+        1
+        for item in rows
+        if isinstance(item.get("grading"), dict)
+        and item["grading"].get("primary_type") == "numeric"
+    )
+    numeric_unmeasured = max(0, numeric_total - evaluated_numeric)
     if blocked_reason:
         mode = "live_model_blocked"
     elif run_agent and use_mock:
         mode = "mock_pipeline_only"
+    elif live_run and unmeasured_items:
+        mode = "live_model_partial"
     elif live_run:
         mode = "live_model_decision_grade"
     else:
@@ -213,7 +280,7 @@ def evaluate(
             DEFAULT_INPUT.read_bytes()
         ).hexdigest() if DEFAULT_INPUT.exists() else "",
         "evaluation_mode": mode,
-        "decision_grade": live_run,
+        "decision_grade": bool(live_run and unmeasured_items == 0),
         "blocked_reason": blocked_reason,
         "run_agent_requested": run_agent,
         "use_mock": use_mock,
@@ -223,10 +290,16 @@ def evaluate(
         "route_subtype_hits": route_subtype_hits,
         "route_subtype_accuracy": route_subtype_hits / total if total else 0.0,
         "numeric_evaluated": evaluated_numeric,
+        "numeric_total": numeric_total,
+        "numeric_unmeasured": numeric_unmeasured,
         "numeric_correct": correct_numeric,
         "numeric_accuracy": correct_numeric / evaluated_numeric if evaluated_numeric else None,
         "numeric_grader_unresolved": unresolved_numeric,
         "manual_review_items": manual_review,
+        "model_completed_items": completed_items,
+        "transport_error_items": transport_error_items,
+        "solver_error_items": solver_error_items,
+        "unmeasured_items": unmeasured_items,
         "rows": rows_out,
     }
 
@@ -240,9 +313,12 @@ def render_markdown(summary: Dict[str, Any]) -> str:
         f"- Mode: `{summary['evaluation_mode']}`",
         f"- Decision-grade live model run: `{summary['decision_grade']}`",
         f"- Cases: `{summary['total']}`",
-        f"- Numeric cases evaluated: `{summary['numeric_evaluated']}`",
+        f"- Numeric cases total / evaluated / unmeasured: `{summary.get('numeric_total', 0)} / {summary['numeric_evaluated']} / {summary.get('numeric_unmeasured', 0)}`",
         f"- Numeric correct: `{summary['numeric_correct']}`",
         f"- Manual proof review cases: `{summary['manual_review_items']}`",
+        f"- Model-completed cases: `{summary.get('model_completed_items', 0)}`",
+        f"- Transport-error cases: `{summary.get('transport_error_items', 0)}`",
+        f"- Unmeasured cases: `{summary.get('unmeasured_items', 0)}`",
     ]
     if summary.get("blocked_reason"):
         lines.extend(["", f"**Live run blocked:** {summary['blocked_reason']}"])
@@ -258,8 +334,8 @@ def render_markdown(summary: Dict[str, Any]) -> str:
             "",
             "## Case results",
             "",
-            "| Case | Route | Model answer / state | Grading | Truncation |",
-            "|---|---|---|---|---|",
+            "| Case | Route | Model answer / state | Status | Grading | Truncation |",
+            "|---|---|---|---|---|---|",
         ]
     )
     for row in summary.get("rows", []):
@@ -269,10 +345,11 @@ def render_markdown(summary: Dict[str, Any]) -> str:
         grade_state = "manual/none"
         if isinstance(grading, dict):
             grade_state = str(grading.get("correct"))
-        if not summary.get("decision_grade") and summary.get("evaluation_mode") != "mock_pipeline_only":
+        status = str(row.get("evaluation_status") or "not_run")
+        if status != "completed":
             grade_state = "not measured"
         lines.append(
-            f"| {row.get('idx')} | {row.get('route_primary')} / {row.get('route_subtype') or '-'} | {answer} | {grade_state} | {row.get('output_truncated_detected')} -> recovery {row.get('recovery_kept')} |"
+            f"| {row.get('idx')} | {row.get('route_primary')} / {row.get('route_subtype') or '-'} | {answer} | {status} | {grade_state} | {row.get('output_truncated_detected')} -> recovery {row.get('recovery_kept')} |"
         )
     return "\n".join(lines) + "\n"
 
@@ -319,7 +396,10 @@ def main() -> int:
     output_md.write_text(render_markdown(summary), encoding="utf-8")
     print(json.dumps({key: summary[key] for key in (
         "evaluation_mode", "decision_grade", "total", "numeric_evaluated",
-        "numeric_correct", "numeric_grader_unresolved", "blocked_reason",
+        "numeric_total", "numeric_unmeasured", "numeric_correct",
+        "numeric_grader_unresolved", "model_completed_items",
+        "transport_error_items", "solver_error_items", "unmeasured_items",
+        "blocked_reason",
     )}, ensure_ascii=False, indent=2))
     return 0 if not summary.get("blocked_reason") else 2
 

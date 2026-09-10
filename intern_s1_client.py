@@ -88,10 +88,47 @@ class InternS1Client:
                 return content
             except Exception as exc:
                 last_error = exc
-                if attempt >= self.retry:
+                if attempt >= self.retry or not self._is_retryable(exc):
                     break
                 time.sleep(self._retry_delay(exc, attempt))
-        raise RuntimeError(f"Intern-S1 request failed after {self.retry} attempts: {last_error}")
+        raise RuntimeError(
+            f"Intern-S1 request failed after {attempt} attempt(s): {self._error_summary(last_error)}"
+        )
+
+    def _is_retryable(self, exc: Exception) -> bool:
+        """Retry transient transport/provider failures, not bad requests or auth errors."""
+
+        response = getattr(exc, "response", None)
+        status = getattr(exc, "status_code", None)
+        if status is None and response is not None:
+            status = getattr(response, "status_code", None)
+        if status is not None:
+            try:
+                return int(status) in {408, 409, 425, 429, 500, 502, 503, 504}
+            except (TypeError, ValueError):
+                pass
+        name = type(exc).__name__.lower()
+        text = str(exc).lower()
+        if any(marker in name or marker in text for marker in (
+            "timeout", "timed out", "connection", "network", "temporar",
+            "rate limit", "server error", "reset", "unavailable",
+        )):
+            return True
+        # Unknown SDK exceptions remain retryable for backward compatibility;
+        # explicit 4xx responses above are the important non-retryable case.
+        return True
+
+    def _error_summary(self, exc: Optional[Exception]) -> str:
+        if exc is None:
+            return "unknown error"
+        message = str(exc).replace(self.api_key or "", "[REDACTED]")
+        message = message.replace("\n", " ").strip()
+        if len(message) > 300:
+            message = message[:297] + "..."
+        status = getattr(exc, "status_code", None)
+        if status is not None and str(status) not in message:
+            return f"{type(exc).__name__} (status={status}): {message}"
+        return f"{type(exc).__name__}: {message}"
 
     def _retry_delay(self, exc: Exception, attempt: int) -> float:
         retry_after = self._extract_retry_after(exc)

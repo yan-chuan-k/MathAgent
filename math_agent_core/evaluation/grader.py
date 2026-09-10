@@ -391,6 +391,27 @@ def _looks_reliably_symbolic(value: str) -> bool:
     return bool(re.search(r"[=+\-*/^()\[\]{}]", text))
 
 
+def _leading_numeric_conclusion(text: str) -> tuple[str | None, int | None]:
+    """Read an answer-first numeric value before optional explanation."""
+
+    number = r"[+\-]?(?:\d+\s*/\s*\d+|\d+(?:\.\d+)?)"
+    labeled = re.match(
+        rf"^\s*(?:final\s+answer|answer|result|conclusion)\s*(?:is|equals|=|:)\s*({number})",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if labeled:
+        return labeled.group(1).strip(), labeled.start(1)
+
+    bare = re.match(
+        rf"^\s*({number})(?=\s*(?:$|[.,;:!?()\[\]]))",
+        text,
+    )
+    if bare:
+        return bare.group(1).strip(), bare.start(1)
+    return None, None
+
+
 def _answer_statements(text: str) -> list[str]:
     chunks = [chunk.strip() for chunk in re.split(r"(?<=[.!?;])\s+|\n+", text) if chunk.strip()]
     return chunks or [text.strip()]
@@ -414,6 +435,10 @@ def _last_numeric_conclusion(text: str) -> tuple[str | None, bool]:
     for pattern in patterns:
         for match in re.finditer(pattern, text, flags=re.IGNORECASE):
             candidates.append((match.start(1), match.group(1).strip()))
+
+    leading_value, leading_position = _leading_numeric_conclusion(text)
+    if leading_value is not None and leading_position is not None:
+        candidates.append((leading_position, leading_value))
 
     stripped = text.strip().strip("`$.,;: ")
     if _looks_numeric_literal(stripped):
